@@ -759,9 +759,7 @@ const ChatListPage = ({ onSelectChat }: { onSelectChat: () => void }) => {
         {[
           { name: 'Admin', time: '10:30', msg: 'Olá! A agenda de hoje foi confirmada.', unread: 0, img: 'https://picsum.photos/seed/admin/100/100' },
           { name: 'Gerente', time: '09:45', msg: 'Pode revisar o relatório de insumos?', unread: 2, img: 'https://picsum.photos/seed/manager/100/100' },
-          { name: 'Recepcionista', time: 'Ontem', msg: 'A paciente Ana Maria chegou para o horário das 14h.', unread: 0, img: 'https://picsum.photos/seed/reception/100/100' },
-          { name: 'Dr. Ricardo', time: 'Ontem', msg: 'Encaminhei o prontuário por e-mail.', unread: 0, img: 'https://picsum.photos/seed/ricardo/100/100' },
-          { name: 'Equipe Podology', time: '12:15', msg: 'Admin: Reunião às 17h pessoal!', unread: 5, isGroup: true },
+          { name: 'Recepcionista 1', time: 'Ontem', msg: 'A paciente Ana Maria chegou para o horário das 14h.', unread: 0, img: 'https://picsum.photos/seed/reception/100/100' },
         ].map((chat, i) => (
           <div key={i} onClick={onSelectChat} className={cn(
             "flex items-center gap-4 px-4 min-h-[80px] py-3 hover:bg-slate-50 cursor-pointer transition-colors border-b border-slate-50",
