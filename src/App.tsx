@@ -227,8 +227,14 @@ const LoginPage = ({ onLogin }: { onLogin: (user: AppUser) => void }) => {
     try {
       if (supabase) {
         // ── Supabase Auth ───────────────────────────────────────────────────
+        let emailToLogin = credential.trim();
+        // Permite logar usando apenas o nome de usuário (ex: admin)
+        if (!emailToLogin.includes('@')) {
+          emailToLogin = `${emailToLogin}@podologypro.com`;
+        }
+
         const { data, error: authError } = await supabase.auth.signInWithPassword({
-          email: credential.trim(),
+          email: emailToLogin,
           password,
         });
 
@@ -308,17 +314,17 @@ const LoginPage = ({ onLogin }: { onLogin: (user: AppUser) => void }) => {
         <form className="space-y-5" onSubmit={handleSubmit}>
           <div className="space-y-2">
             <label className="text-sm font-semibold text-slate-700 ml-1">
-              {isSupabase ? 'E-mail' : 'Usuário'}
+              Usuário ou E-mail
             </label>
             <div className="relative group">
               <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-primary transition-colors" size={20} />
               <input 
                 className="w-full pl-12 pr-4 py-3.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-900 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all placeholder:text-slate-400" 
-                placeholder={isSupabase ? 'seu@email.com' : 'Seu usuário de acesso'}
-                type={isSupabase ? 'email' : 'text'}
+                placeholder="Ex: admin ou admin@podologypro.com"
+                type="text"
                 value={credential}
                 onChange={(e) => setCredential(e.target.value)}
-                autoComplete={isSupabase ? 'email' : 'username'}
+                autoComplete="username"
                 required
               />
             </div>
