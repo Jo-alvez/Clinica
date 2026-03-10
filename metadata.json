@@ -1,0 +1,8 @@
+{
+  "name": "Podology Pro",
+  "description": "Sistema completo de gestão para clínicas de podologia, incluindo prontuários, estoque, financeiro e chat interno.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
