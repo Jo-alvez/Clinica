@@ -46,6 +46,9 @@ import {
   X,
   Clock,
   AlertCircle,
+  Pin,
+  BellOff,
+  Archive,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -805,7 +808,7 @@ const ChatListPage = ({ onSelectChat, currentUser }: { onSelectChat: (conv: Chat
         
         <div className="px-4 pb-2">
           <div className="relative group">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 size-16" size={16} />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
             <input 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -881,18 +884,35 @@ const ChatListPage = ({ onSelectChat, currentUser }: { onSelectChat: (conv: Chat
               </div>
               <div className="flex flex-col justify-center flex-1">
                 <div className="flex justify-between items-center mb-0.5">
-                  <p className={cn("text-slate-900 text-base", (chat.unreadCount || 0) > 0 ? "font-bold" : "font-semibold")}>
-                    {chat.nomeGroup || "Conversa"}
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <p className={cn("text-slate-900 text-base", (chat.unreadCount || 0) > 0 ? "font-bold" : "font-semibold")}>
+                      {chat.nomeGroup || "Conversa"}
+                    </p>
+                    {chat.isPinned && <Pin size={12} className="text-primary fill-primary" />}
+                  </div>
                   <p className="text-xs text-slate-400">{chat.lastMessageTime}</p>
                 </div>
                 <div className="flex justify-between items-center text-sm">
                   <p className="text-slate-500 line-clamp-1 flex-1 mr-2">{chat.lastMessagePreview || "Sem mensagens ainda"}</p>
-                  {(chat.unreadCount || 0) > 0 && (
-                    <div className="bg-primary text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
-                      {chat.unreadCount}
-                    </div>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {(chat.unreadCount || 0) > 0 && (
+                      <div className="bg-primary text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
+                        {chat.unreadCount}
+                      </div>
+                    )}
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const action = confirm(chat.isArchived ? "Desarquivar conversa?" : "Arquivar conversa?");
+                        if (action) {
+                          chatService.updateConversationSettings(currentUser.id, chat.id, { isArchived: !chat.isArchived });
+                        }
+                      }}
+                      className="p-1 hover:bg-slate-100 rounded text-slate-300 hover:text-slate-600 transition-colors"
+                    >
+                      <MoreVertical size={16} />
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -929,17 +949,49 @@ const NewChatModal = ({ currentUser, onClose, onChatCreated }: {
   onChatCreated: (c: ChatConversation) => void 
 }) => {
   const [loading, setLoading] = useState(false);
+  const [mode, setMode] = useState<'SELECT' | 'GROUP_INFO'>('SELECT');
+  const [isGroupMode, setIsGroupMode] = useState(false);
+  const [selectedUsers, setSelectedUsers] = useState<AppUser[]>([]);
+  const [groupName, setGroupName] = useState('');
+  
   const users = INITIAL_USERS.filter(u => u.id !== currentUser.id);
 
-  const startPrivateChat = async (otherUser: AppUser) => {
+  const toggleUser = (u: AppUser) => {
+    if (selectedUsers.find(su => su.id === u.id)) {
+      setSelectedUsers(prev => prev.filter(su => su.id !== u.id));
+    } else {
+      setSelectedUsers(prev => [...prev, u]);
+    }
+  };
+
+  const handleAction = async (u: AppUser) => {
+    if (isGroupMode) {
+      toggleUser(u);
+    } else {
+      setLoading(true);
+      try {
+        const conv = await chatService.createPrivateChat(currentUser.id, u.id);
+        if (conv) {
+          onChatCreated({ ...conv, nomeGroup: u.name, avatarUrl: u.avatar });
+        }
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
+
+  const handleCreateGroup = async () => {
+    if (!groupName.trim()) return;
     setLoading(true);
     try {
-      const conv = await chatService.createPrivateChat(currentUser.id, otherUser.id);
+      const conv = await chatService.createGroupChat({
+        nomeGroup: groupName.trim(),
+        myUserId: currentUser.id,
+        participantIds: selectedUsers.map(u => u.id),
+      });
       if (conv) {
-        onChatCreated({ ...conv, nomeGroup: otherUser.name, avatarUrl: otherUser.avatar });
+        onChatCreated(conv);
       }
-    } catch (error) {
-      console.error('Erro ao criar chat:', error);
     } finally {
       setLoading(false);
     }
@@ -950,32 +1002,133 @@ const NewChatModal = ({ currentUser, onClose, onChatCreated }: {
       <motion.div 
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh]"
+        className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
       >
         <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-          <h3 className="text-lg font-bold">Nova Conversa</h3>
-          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
+          <div className="flex items-center gap-2">
+            {mode === 'GROUP_INFO' && (
+              <button 
+                onClick={() => setMode('SELECT')}
+                className="p-1.5 hover:bg-slate-100 rounded-full text-slate-500"
+              >
+                <ArrowLeft size={20} />
+              </button>
+            )}
+            <h3 className="text-lg font-bold">
+              {mode === 'SELECT' ? (isGroupMode ? 'Novos Participantes' : 'Nova Conversa') : 'Dados do Grupo'}
+            </h3>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-400">
             <X size={20} />
           </button>
         </div>
         
-        <div className="overflow-y-auto flex-1 p-2 space-y-1">
-          {users.map(u => (
-            <button 
-              key={u.id}
-              onClick={() => startPrivateChat(u)}
-              disabled={loading}
-              className="w-full flex items-center gap-3 p-3 hover:bg-slate-50 rounded-xl transition-all text-left"
-            >
-              <img src={u.avatar} className="size-10 rounded-full border border-slate-200" alt="" />
-              <div className="flex-1">
-                <p className="font-bold text-slate-900 text-sm">{u.name}</p>
-                <p className="text-xs text-slate-400 capitalize">{u.role.toLowerCase()}</p>
+        {mode === 'SELECT' ? (
+          <>
+            <div className="p-3 border-b border-slate-50">
+              <button 
+                onClick={() => setIsGroupMode(!isGroupMode)}
+                className={cn(
+                  "w-full flex items-center gap-3 p-3 rounded-xl transition-all font-bold text-sm",
+                  isGroupMode ? "bg-primary/10 text-primary border border-primary/20" : "bg-slate-50 text-slate-600 border border-transparent"
+                )}
+              >
+                <div className={cn("size-10 rounded-full flex items-center justify-center shrink-0", isGroupMode ? "bg-primary text-white" : "bg-slate-200 text-slate-500")}>
+                  <Users size={20} />
+                </div>
+                {isGroupMode ? "Desativar Modo Grupo" : "Criar Novo Grupo"}
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 p-2 space-y-1">
+              <p className="px-3 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Contatos</p>
+              {users.map(u => {
+                const isSelected = !!selectedUsers.find(su => su.id === u.id);
+                return (
+                  <button 
+                    key={u.id}
+                    onClick={() => handleAction(u)}
+                    disabled={loading}
+                    className={cn(
+                      "w-full flex items-center gap-3 p-3 rounded-xl transition-all text-left group",
+                      isSelected ? "bg-primary/5 border-primary/20" : "hover:bg-slate-50"
+                    )}
+                  >
+                    <div className="relative">
+                      <img src={u.avatar} className="size-11 rounded-full border border-slate-200 shrink-0" alt="" />
+                      {isGroupMode && isSelected && (
+                        <div className="absolute -top-1 -right-1 bg-primary text-white rounded-full p-0.5 border-2 border-white">
+                          <Check size={12} strokeWidth={4} />
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1">
+                      <p className="font-bold text-slate-900 text-sm">{u.name}</p>
+                      <p className="text-xs text-slate-400 capitalize">{u.role.toLowerCase()}</p>
+                    </div>
+                    {!isGroupMode && <ChevronRight size={18} className="text-slate-300 group-hover:text-primary transition-colors" />}
+                  </button>
+                );
+              })}
+            </div>
+
+            {isGroupMode && (
+              <div className="p-4 border-t border-slate-100 bg-slate-50">
+                <button 
+                  disabled={selectedUsers.length < 1 || loading}
+                  onClick={() => setMode('GROUP_INFO')}
+                  className="w-full bg-primary text-white py-3.5 rounded-xl font-bold text-sm shadow-lg shadow-primary/30 disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  Continuar ({selectedUsers.length})
+                  <ArrowUp size={18} className="rotate-90" />
+                </button>
               </div>
-              <ChevronRight size={18} className="text-slate-300" />
-            </button>
-          ))}
-        </div>
+            )}
+          </>
+        ) : (
+          <div className="p-6 space-y-6 flex-1 overflow-y-auto">
+            <div className="flex flex-col items-center gap-4">
+              <div className="size-24 bg-slate-100 rounded-full border-2 border-dashed border-slate-300 flex items-center justify-center text-slate-400 hover:border-primary hover:text-primary cursor-pointer transition-all">
+                <Camera size={28} />
+              </div>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Foto do Grupo (Opcional)</p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-bold text-slate-700 ml-1">Nome do Grupo</label>
+              <input 
+                autoFocus
+                value={groupName}
+                onChange={(e) => setGroupName(e.target.value)}
+                placeholder="Ex: Agenda do Dia, Equipe Administrativa..."
+                className="w-full bg-slate-50 border-slate-200 border rounded-xl py-3.5 px-4 text-sm focus:ring-2 focus:ring-primary/20 outline-none"
+              />
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Participantes ({selectedUsers.length})</p>
+              <div className="flex flex-wrap gap-2">
+                {selectedUsers.map(u => (
+                  <div key={u.id} className="flex items-center gap-2 bg-slate-100 pl-1 pr-3 py-1 rounded-full border border-slate-200">
+                    <img src={u.avatar} className="size-6 rounded-full" alt="" />
+                    <span className="text-xs font-bold text-slate-700">{u.name.split(' ')[0]}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="pt-4">
+              <button 
+                disabled={!groupName.trim() || loading}
+                onClick={handleCreateGroup}
+                className="w-full bg-primary text-white py-4 rounded-xl font-bold text-base shadow-xl shadow-primary/20 flex items-center justify-center gap-3 transition-all active:scale-[0.98] disabled:opacity-60"
+              >
+                {loading ? <Activity className="animate-spin" /> : <Check size={22} strokeWidth={3} />}
+                {loading ? 'Criando Grupo...' : 'Confirmar e Criar'}
+              </button>
+            </div>
+          </div>
+        )}
       </motion.div>
     </div>
   );
@@ -985,7 +1138,10 @@ const ChatDetailPage = ({ onBack, conversation, currentUser }: { onBack: () => v
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [showGroupDetails, setShowGroupDetails] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadMessages = useCallback(async () => {
     try {
@@ -1055,6 +1211,39 @@ const ChatDetailPage = ({ onBack, conversation, currentUser }: { onBack: () => v
     }
   };
 
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    try {
+      // 1. Upload to Storage
+      const publicUrl = await chatService.uploadChatFile(file, conversation.id);
+      
+      if (publicUrl) {
+        // 2. Send Message
+        const type = file.type.startsWith('image/') ? 'IMAGE' : 'DOCUMENT';
+        await chatService.sendMessage({
+          conversationId: conversation.id,
+          senderId: currentUser.id,
+          type,
+          fileUrl: publicUrl,
+          fileName: file.name,
+          fileSize: file.size,
+          mimeType: file.type
+        });
+      } else {
+        alert('Erro ao fazer upload do arquivo.');
+      }
+    } catch (error) {
+      console.error('Erro no arquivo:', error);
+      alert('Falha ao processar arquivo.');
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       handleSend();
@@ -1064,8 +1253,14 @@ const ChatDetailPage = ({ onBack, conversation, currentUser }: { onBack: () => v
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-slate-50">
       <header className="flex items-center bg-white p-4 border-b border-slate-100 sticky top-0 z-40">
-        <div className="flex items-center gap-3 flex-1">
-          <button onClick={onBack} className="text-slate-600 hover:bg-slate-100 p-2 rounded-full transition-colors">
+        <div 
+          onClick={() => conversation.type === 'GROUP' && setShowGroupDetails(true)}
+          className={cn("flex items-center gap-3 flex-1", conversation.type === 'GROUP' ? "cursor-pointer" : "")}
+        >
+          <button 
+            onClick={(e) => { e.stopPropagation(); onBack(); }} 
+            className="text-slate-600 hover:bg-slate-100 p-2 rounded-full transition-colors"
+          >
             <ArrowLeft size={24} />
           </button>
           <div className="relative">
@@ -1131,7 +1326,34 @@ const ChatDetailPage = ({ onBack, conversation, currentUser }: { onBack: () => v
                         ? "bg-primary text-white border-primary rounded-br-none" 
                         : "bg-white text-slate-800 border-slate-100 rounded-bl-none"
                     )}>
-                      <p className="text-sm leading-relaxed">{msg.textContent}</p>
+                      {msg.messageType === 'IMAGE' ? (
+                        <div className="flex flex-col gap-2">
+                          <img 
+                            src={msg.fileUrl} 
+                            alt="Mídia" 
+                            className="max-w-full rounded-lg cursor-pointer hover:opacity-95 transition-opacity"
+                            onClick={() => msg.fileUrl && window.open(msg.fileUrl, '_blank')}
+                          />
+                          {msg.textContent && <p className="text-sm">{msg.textContent}</p>}
+                        </div>
+                      ) : msg.messageType === 'DOCUMENT' ? (
+                        <div 
+                          className="flex items-center gap-3 cursor-pointer py-1"
+                          onClick={() => msg.fileUrl && window.open(msg.fileUrl, '_blank')}
+                        >
+                          <div className={cn("p-2 rounded-lg", isMe ? "bg-white/20" : "bg-slate-100")}>
+                            <FileText size={24} className={isMe ? "text-white" : "text-primary"} />
+                          </div>
+                          <div className="flex flex-col min-w-0">
+                            <p className="text-sm font-bold truncate">{msg.fileName || 'Documento'}</p>
+                            <p className={cn("text-[10px]", isMe ? "text-white/70" : "text-slate-400")}>
+                              {(msg.fileSize ? (msg.fileSize / 1024 / 1024).toFixed(2) : '0')} MB • PDF
+                            </p>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-sm leading-relaxed">{msg.textContent}</p>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 px-1 py-0.5">
@@ -1158,9 +1380,32 @@ const ChatDetailPage = ({ onBack, conversation, currentUser }: { onBack: () => v
         )}
       </main>
 
-      <footer className="p-4 bg-white border-t border-slate-100">
+      <footer className="p-4 bg-white border-t border-slate-100 relative">
+        {uploading && (
+          <div className="absolute top-0 left-0 w-full h-1 bg-slate-100 overflow-hidden">
+            <motion.div 
+              initial={{ x: '-100%' }}
+              animate={{ x: '100%' }}
+              transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}
+              className="w-1/3 h-full bg-primary"
+            />
+          </div>
+        )}
+        
+        <input 
+          type="file" 
+          ref={fileInputRef} 
+          className="hidden" 
+          onChange={handleFileSelect}
+          accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
+        />
+
         <div className="flex items-center gap-2">
-          <button onClick={() => alert('Selecione um arquivo ou foto...')} className="text-slate-400 hover:text-primary p-2 transition-colors">
+          <button 
+            onClick={() => fileInputRef.current?.click()} 
+            className="text-slate-400 hover:text-primary p-2 transition-colors relative"
+            disabled={uploading}
+          >
             <Plus size={24} />
           </button>
           <div className="flex-1 relative">
@@ -1168,23 +1413,99 @@ const ChatDetailPage = ({ onBack, conversation, currentUser }: { onBack: () => v
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={handleKeyDown}
-              className="w-full bg-slate-100 border-none rounded-full py-3 px-5 text-sm focus:ring-2 focus:ring-primary/50 text-slate-900 placeholder-slate-500 transition-all" 
-              placeholder="Sua mensagem..." 
+              disabled={uploading}
+              className="w-full bg-slate-100 border-none rounded-full py-3 px-5 text-sm focus:ring-2 focus:ring-primary/50 text-slate-900 placeholder-slate-500 transition-all disabled:opacity-50" 
+              placeholder={uploading ? "Enviando arquivo..." : "Sua mensagem..." }
               type="text"
             />
-            <button onClick={() => alert('Emoji picker... 🤩')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-primary transition-colors">
+            <button 
+              onClick={() => alert('Emoji picker... 🤩')} 
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-primary transition-colors"
+            >
               <Smile size={20} />
             </button>
           </div>
           <button 
             onClick={handleSend}
-            disabled={!inputValue.trim()}
+            disabled={!inputValue.trim() || uploading}
             className="bg-primary text-white w-11 h-11 flex items-center justify-center rounded-full shadow-lg shadow-primary/30 hover:bg-primary/90 transition-all active:scale-95 disabled:opacity-50 disabled:grayscale disabled:scale-100"
           >
             <Send size={20} />
           </button>
         </div>
       </footer>
+
+      {showGroupDetails && (
+        <GroupDetailsModal 
+          conversation={conversation} 
+          onClose={() => setShowGroupDetails(false)} 
+        />
+      )}
+    </div>
+  );
+};
+
+const GroupDetailsModal = ({ conversation, onClose }: { conversation: ChatConversation, onClose: () => void }) => {
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      <motion.div 
+        initial={{ y: 50, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
+      >
+        <div className="relative h-48 bg-slate-100 flex items-center justify-center">
+          {conversation.avatarUrl ? (
+            <img src={conversation.avatarUrl} className="w-full h-full object-cover" alt="" />
+          ) : (
+            <Users size={80} className="text-slate-300" />
+          )}
+          <button onClick={onClose} className="absolute top-4 right-4 bg-white/80 p-2 rounded-full hover:bg-white transition-colors">
+            <X size={20} className="text-slate-900" />
+          </button>
+          <div className="absolute bottom-0 left-0 w-full p-6 bg-gradient-to-t from-black/60 to-transparent text-white">
+            <h3 className="text-xl font-bold">{conversation.nomeGroup || 'Grupo'}</h3>
+            <p className="text-sm opacity-80">{conversation.type === 'GROUP' ? 'Grupo da Clínica' : 'Privado'}</p>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+          <div className="space-y-4">
+            <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest">Ações</h4>
+            <div className="grid grid-cols-2 gap-3">
+              <button className="flex flex-col items-center gap-2 p-4 bg-slate-50 rounded-2xl border border-slate-100 hover:bg-primary/5 hover:border-primary/20 transition-all text-primary">
+                <Bell size={20} />
+                <span className="text-xs font-bold">Silenciar</span>
+              </button>
+              <button className="flex flex-col items-center gap-2 p-4 bg-slate-50 rounded-2xl border border-slate-100 hover:bg-primary/5 hover:border-primary/20 transition-all text-primary">
+                <Search size={20} />
+                <span className="text-xs font-bold">Pesquisar</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <h4 className="text-sm font-bold text-slate-400 uppercase tracking-widest">Participantes</h4>
+            <div className="space-y-3">
+              {INITIAL_USERS.slice(0, 3).map((u, i) => (
+                <div key={i} className="flex items-center gap-3">
+                  <img src={u.avatar} className="size-10 rounded-full border border-slate-100" alt="" />
+                  <div className="flex-1">
+                    <p className="text-sm font-bold text-slate-900">{u.name}</p>
+                    <p className="text-xs text-slate-400 capitalize">{u.role.toLowerCase()}</p>
+                  </div>
+                  {i === 0 && <span className="text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded uppercase">Admin</span>}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="p-4 border-t border-slate-100">
+          <button className="w-full py-4 text-red-500 font-bold text-sm hover:bg-red-50 rounded-xl transition-colors">
+            Sair do Grupo
+          </button>
+        </div>
+      </motion.div>
     </div>
   );
 };

@@ -103,6 +103,119 @@ export const chatService = {
     return newConv;
   },
 
+  async createGroupChat(params: {
+    nomeGroup: string;
+    descricaoGroup?: string;
+    avatarUrl?: string;
+    myUserId: string;
+    participantIds: string[];
+    isInstitutional?: boolean;
+  }) {
+    if (!supabase) return null;
+
+    // Create group conversation
+    const { data: newConv, error: convError } = await supabase
+      .from('chat_conversations')
+      .insert({
+        type: 'GROUP',
+        nome_group: params.nomeGroup,
+        descricao_group: params.descricaoGroup,
+        avatar_url: params.avatarUrl,
+        created_by_user_id: params.myUserId,
+        is_institutional: params.isInstitutional ?? false
+      })
+      .select()
+      .single();
+
+    if (convError || !newConv) return null;
+
+    // Add all participants including creator
+    const participants = [params.myUserId, ...params.participantIds].map(uid => ({
+      conversation_id: newConv.id,
+      user_id: uid,
+      role_in_group: uid === params.myUserId ? 'ADMIN_GROUP' : 'MEMBER'
+    }));
+
+    await supabase.from('chat_participants').insert(participants);
+
+    // System message: group created
+    await this.sendMessage({
+      conversationId: newConv.id,
+      senderId: params.myUserId,
+      type: 'SYSTEM',
+      content: 'Grupo criado'
+    });
+
+    return newConv;
+  },
+
+  async getConversationDetails(conversationId: string) {
+    if (!supabase) return null;
+    
+    // Get conversation info
+    const { data: conv } = await supabase
+      .from('chat_conversations')
+      .select('*')
+      .eq('id', conversationId)
+      .single();
+      
+    if (!conv) return null;
+    
+    // Get participants with user profiles
+    const { data: participants } = await supabase
+      .from('chat_participants')
+      .select('*, profiles:user_id(*)') // Assuming profiles table matches auth.users(id)
+      .eq('conversation_id', conversationId)
+      .eq('active', true);
+      
+    return {
+      ...conv,
+      participants: participants || []
+    };
+  },
+
+  // --- Storage & Files ---
+
+  async uploadChatFile(file: File, path: string) {
+    if (!supabase) return null;
+    
+    // Create bucket if it doesn't exist (only if you have permission)
+    // For now assume 'chat-files' bucket exists
+    
+    const fileName = `${Date.now()}_${file.name}`;
+    const { data, error } = await supabase.storage
+      .from('chat-files')
+      .upload(`${path}/${fileName}`, file);
+      
+    if (error) {
+      console.error('Erro no upload:', error);
+      return null;
+    }
+    
+    const { data: { publicUrl } } = supabase.storage
+      .from('chat-files')
+      .getPublicUrl(data.path);
+      
+    return publicUrl;
+  },
+
+  async updateConversationSettings(userId: string, conversationId: string, updates: Partial<ChatUserConversationSettings>) {
+    if (!supabase) return;
+
+    const { error } = await supabase
+      .from('chat_user_conversation_settings')
+      .upsert({
+        user_id: userId,
+        conversation_id: conversationId,
+        is_archived: updates.isArchived,
+        is_pinned: updates.isPinned,
+        muted_until: updates.mutedUntil,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'user_id,conversation_id' });
+
+    if (error) console.error('Erro ao atualizar configurações:', error);
+  },
+
   // --- Messages ---
 
   async getMessages(conversationId: string, limit = 50) {
