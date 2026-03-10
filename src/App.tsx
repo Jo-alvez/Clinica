@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   LayoutGrid,
   Calendar,
@@ -670,13 +670,27 @@ const PatientsPage = ({ onSelectPatient }: { onSelectPatient: () => void }) => {
 };
 
 const ServiceRecordPage = () => {
+  const [procedimento, setProcedimento] = useState('');
+  const [notas, setNotas] = useState('');
+  const [saved, setSaved] = useState(false);
+
+  const handleSave = () => {
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
   return (
     <div className="flex-1 pb-4">
       <Header 
         title="Registro de Atendimento" 
         rightAction={
-          <button className="flex items-center justify-center rounded-xl h-10 w-10 bg-primary/10 text-primary">
-            <Check size={24} />
+          <button 
+            onClick={handleSave}
+            className={cn("flex items-center justify-center rounded-xl h-10 w-10 transition-colors", 
+              saved ? "bg-emerald-500 text-white" : "bg-primary/10 text-primary"
+            )}
+          >
+            {saved ? <Check size={24} /> : <Check size={24} />}
           </button>
         }
       />
@@ -701,6 +715,8 @@ const ServiceRecordPage = () => {
             Descrição do procedimento
           </label>
           <textarea 
+            value={procedimento}
+            onChange={(e) => setProcedimento(e.target.value)}
             className="block w-full rounded-xl border-slate-200 bg-white focus:ring-primary focus:border-primary min-h-[120px] placeholder:text-slate-400 text-base p-3 outline-none border" 
             placeholder="Descreva detalhadamente o que foi realizado no atendimento..."
           ></textarea>
@@ -712,24 +728,35 @@ const ServiceRecordPage = () => {
             Observações clínicas
           </label>
           <textarea 
+            value={notas}
+            onChange={(e) => setNotas(e.target.value)}
             className="block w-full rounded-xl border-slate-200 bg-white focus:ring-primary focus:border-primary min-h-[120px] placeholder:text-slate-400 text-base p-3 outline-none border" 
             placeholder="Notas sobre cicatrização, sensibilidade, alergias ou recomendações futuras..."
           ></textarea>
         </div>
 
         <div className="pt-2">
-          <button className="w-full flex items-center justify-center gap-3 bg-primary text-white font-bold py-4 px-6 rounded-xl shadow-lg shadow-primary/20 active:scale-95 transition-transform">
+          <button onClick={() => alert('Abrindo câmera...')} className="w-full flex items-center justify-center gap-3 bg-primary text-white font-bold py-4 px-6 rounded-xl shadow-lg shadow-primary/20 active:scale-95 transition-transform">
             <Camera size={24} />
             Adicionar Foto Clínica
           </button>
           <p className="text-center text-slate-400 text-xs mt-3">Anexe fotos do "antes" e "depois" para o prontuário.</p>
         </div>
       </div>
+      {saved && (
+        <motion.div 
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="fixed bottom-24 left-1/2 -translate-x-1/2 bg-emerald-600 text-white px-6 py-2 rounded-full shadow-lg font-bold text-sm"
+        >
+          Registro salvo com sucesso!
+        </motion.div>
+      )}
     </div>
   );
 };
 
-const ChatListPage = ({ onSelectChat }: { onSelectChat: () => void }) => {
+const ChatListPage = ({ onSelectChat }: { onSelectChat: (name: string) => void }) => {
   return (
     <div className="flex-1 pb-4 flex flex-col h-full overflow-hidden">
       <Header 
@@ -761,7 +788,7 @@ const ChatListPage = ({ onSelectChat }: { onSelectChat: () => void }) => {
           { name: 'Gerente', time: '09:45', msg: 'Pode revisar o relatório de insumos?', unread: 2, img: 'https://picsum.photos/seed/manager/100/100' },
           { name: 'Recepcionista 1', time: 'Ontem', msg: 'A paciente Ana Maria chegou para o horário das 14h.', unread: 0, img: 'https://picsum.photos/seed/reception/100/100' },
         ].map((chat, i) => (
-          <div key={i} onClick={onSelectChat} className={cn(
+          <div key={i} onClick={() => onSelectChat(chat.name)} className={cn(
             "flex items-center gap-4 px-4 min-h-[80px] py-3 hover:bg-slate-50 cursor-pointer transition-colors border-b border-slate-50",
             chat.unread > 0 ? "bg-primary/5" : "bg-white"
           )}>
@@ -794,7 +821,10 @@ const ChatListPage = ({ onSelectChat }: { onSelectChat: () => void }) => {
       </div>
       
       <div className="absolute bottom-24 right-6">
-        <button className="bg-primary hover:bg-primary/90 text-white size-14 rounded-full shadow-lg flex items-center justify-center transition-transform active:scale-95">
+        <button 
+          onClick={() => alert('Iniciando nova conversa...')}
+          className="bg-primary hover:bg-primary/90 text-white size-14 rounded-full shadow-lg flex items-center justify-center transition-transform active:scale-95"
+        >
           <MessageSquare size={24} />
         </button>
       </div>
@@ -802,7 +832,41 @@ const ChatListPage = ({ onSelectChat }: { onSelectChat: () => void }) => {
   );
 };
 
-const ChatDetailPage = ({ onBack }: { onBack: () => void }) => {
+const ChatDetailPage = ({ onBack, chatName = "Contato" }: { onBack: () => void, chatName?: string }) => {
+  const [messages, setMessages] = useState([
+    { id: 1, text: 'Olá! Como posso ajudar hoje?', time: '09:15', sender: 'other' },
+  ]);
+  const [inputValue, setInputValue] = useState('');
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  const handleSend = () => {
+    if (!inputValue.trim()) return;
+    
+    const newMessage = {
+      id: Date.now(),
+      text: inputValue,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      sender: 'me'
+    };
+    
+    setMessages(prev => [...prev, newMessage]);
+    setInputValue('');
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      handleSend();
+    }
+  };
+
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-slate-50">
       <header className="flex items-center bg-white p-4 border-b border-slate-100 sticky top-0 z-40">
@@ -811,11 +875,11 @@ const ChatDetailPage = ({ onBack }: { onBack: () => void }) => {
             <ArrowLeft size={24} />
           </button>
           <div className="relative">
-            <div className="w-10 h-10 rounded-full bg-slate-200 overflow-hidden border border-slate-100" style={{ backgroundImage: 'url("https://picsum.photos/seed/ricardo/100/100")', backgroundSize: 'cover' }}></div>
+            <div className="w-10 h-10 rounded-full bg-slate-200 overflow-hidden border border-slate-100" style={{ backgroundImage: 'url("https://picsum.photos/seed/user/100/100")', backgroundSize: 'cover' }}></div>
             <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
           </div>
           <div className="flex flex-col">
-            <h2 className="text-slate-900 text-base font-bold leading-tight">Dr. Ricardo</h2>
+            <h2 className="text-slate-900 text-base font-bold leading-tight">{chatName}</h2>
             <span className="text-primary text-xs font-medium">Online</span>
           </div>
         </div>
@@ -834,66 +898,58 @@ const ChatDetailPage = ({ onBack }: { onBack: () => void }) => {
           <span className="px-3 py-1 bg-slate-200 text-slate-500 text-[10px] font-bold uppercase tracking-wider rounded-full">Hoje</span>
         </div>
 
-        <div className="flex items-end gap-2 max-w-[85%]">
-          <div className="w-8 h-8 rounded-full bg-slate-200 shrink-0 mb-1" style={{ backgroundImage: 'url("https://picsum.photos/seed/ricardo/100/100")', backgroundSize: 'cover' }}></div>
-          <div className="flex flex-col gap-1">
-            <div className="bg-white text-slate-800 p-3 rounded-2xl rounded-bl-none shadow-sm border border-slate-100">
-              <p className="text-sm">Bom dia! Você já revisou o prontuário da paciente das 14h? Ela tem um caso severo de onicomicose.</p>
-            </div>
-            <span className="text-[10px] text-slate-400 ml-1">09:15</span>
-          </div>
-        </div>
-
-        <div className="flex flex-col items-end gap-1 ml-auto max-w-[85%]">
-          <div className="bg-primary text-white p-3 rounded-2xl rounded-br-none shadow-md">
-            <p className="text-sm">Bom dia, Dr. Ricardo! Ainda não vi, estou finalizando um atendimento agora. Vou verificar em 5 minutos.</p>
-          </div>
-          <div className="flex items-center gap-1 mr-1">
-            <span className="text-[10px] text-slate-400">09:17</span>
-            <Check size={14} className="text-primary" />
-          </div>
-        </div>
-
-        <div className="flex items-end gap-2 max-w-[85%]">
-          <div className="w-8 h-8 rounded-full bg-slate-200 shrink-0 mb-1" style={{ backgroundImage: 'url("https://picsum.photos/seed/ricardo/100/100")', backgroundSize: 'cover' }}></div>
-          <div className="flex flex-col gap-1">
-            <div className="bg-white text-slate-800 p-3 rounded-2xl rounded-bl-none shadow-sm border border-slate-100">
-              <p className="text-sm">Perfeito, me avise se houver alguma observação relevante antes de começarmos o procedimento.</p>
-            </div>
-            <span className="text-[10px] text-slate-400 ml-1">09:18</span>
-          </div>
-        </div>
-
-        <div className="flex flex-col items-end gap-1 ml-auto max-w-[85%]">
-          <div className="bg-primary text-white p-3 rounded-2xl rounded-br-none shadow-md space-y-2">
-            <div className="flex items-center gap-2 bg-white/20 p-2 rounded-lg">
-              <FileText size={20} />
-              <div className="flex flex-col">
-                <span className="text-xs font-bold truncate">laudo_paciente_14h.pdf</span>
-                <span className="text-[10px] opacity-80">1.2 MB</span>
+        {messages.map((msg) => (
+          <div key={msg.id} className={cn("flex items-end gap-2 max-w-[85%]", msg.sender === 'me' ? "ml-auto flex-col items-end gap-1" : "")}>
+            {msg.sender === 'other' && (
+              <div className="w-8 h-8 rounded-full bg-slate-200 shrink-0 mb-1" style={{ backgroundImage: 'url("https://picsum.photos/seed/user/100/100")', backgroundSize: 'cover' }}></div>
+            )}
+            
+            {msg.sender === 'other' ? (
+              <div className="flex flex-col gap-1">
+                <div className="bg-white text-slate-800 p-3 rounded-2xl rounded-bl-none shadow-sm border border-slate-100">
+                  <p className="text-sm">{msg.text}</p>
+                </div>
+                <span className="text-[10px] text-slate-400 ml-1">{msg.time}</span>
               </div>
-            </div>
-            <p className="text-sm">Acabei de anexar o laudo anterior para sua referência.</p>
+            ) : (
+              <>
+                <div className="bg-primary text-white p-3 rounded-2xl rounded-br-none shadow-md">
+                  <p className="text-sm">{msg.text}</p>
+                </div>
+                <div className="flex items-center gap-1 mr-1">
+                  <span className="text-[10px] text-slate-400">{msg.time}</span>
+                  <Check size={14} className="text-primary" />
+                </div>
+              </>
+            )}
           </div>
-          <div className="flex items-center gap-1 mr-1">
-            <span className="text-[10px] text-slate-400">09:25</span>
-            <Check size={14} className="text-primary" />
-          </div>
-        </div>
+        ))}
+        <div ref={messagesEndRef} />
       </main>
 
       <footer className="p-4 bg-white border-t border-slate-100">
         <div className="flex items-center gap-2">
-          <button className="text-slate-400 hover:text-primary p-2">
+          <button onClick={() => alert('Selecione um arquivo ou foto...')} className="text-slate-400 hover:text-primary p-2">
             <Plus size={24} />
           </button>
           <div className="flex-1 relative">
-            <input className="w-full bg-slate-100 border-none rounded-full py-3 px-5 text-sm focus:ring-2 focus:ring-primary/50 text-slate-900 placeholder-slate-500" placeholder="Digite sua mensagem..." type="text"/>
-            <button className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+            <input 
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={handleKeyDown}
+              className="w-full bg-slate-100 border-none rounded-full py-3 px-5 text-sm focus:ring-2 focus:ring-primary/50 text-slate-900 placeholder-slate-500" 
+              placeholder="Digite sua mensagem..." 
+              type="text"
+            />
+            <button onClick={() => alert('Emoji picker... 🤩')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
               <Smile size={20} />
             </button>
           </div>
-          <button className="bg-primary text-white w-11 h-11 flex items-center justify-center rounded-full shadow-lg shadow-primary/30 hover:bg-primary/90 transition-all active:scale-95">
+          <button 
+            onClick={handleSend}
+            disabled={!inputValue.trim()}
+            className="bg-primary text-white w-11 h-11 flex items-center justify-center rounded-full shadow-lg shadow-primary/30 hover:bg-primary/90 transition-all active:scale-95 disabled:opacity-50 disabled:active:scale-100"
+          >
             <Send size={20} />
           </button>
         </div>
@@ -1589,6 +1645,7 @@ export default function App() {
   const [pacientes, setPacientes] = useState<Paciente[]>(INITIAL_PACIENTES);
   const [anamneses, setAnamneses] = useState<Anamnese[]>(INITIAL_ANAMNESES);
   const [atendimentos] = useState<Atendimento[]>(INITIAL_ATENDIMENTOS);
+  const [selectedChat, setSelectedChat] = useState<string | null>(null);
   const servicos = INITIAL_SERVICOS;
 
   // ── Restore Supabase session on mount ────────────────────────────────────
@@ -1731,8 +1788,18 @@ export default function App() {
               )}
               {currentPage === 'service-record' && <ServiceRecordPage />}
               {currentPage === 'inventory' && <InventoryPage />}
-              {currentPage === 'chat-list' && <ChatListPage onSelectChat={() => setCurrentPage('chat-detail')} />}
-              {currentPage === 'chat-detail' && <ChatDetailPage onBack={() => setCurrentPage('chat-list')} />}
+              {currentPage === 'chat-list' && (
+                <ChatListPage onSelectChat={(name) => {
+                  setSelectedChat(name);
+                  setCurrentPage('chat-detail');
+                }} />
+              )}
+              {currentPage === 'chat-detail' && (
+                <ChatDetailPage 
+                  onBack={() => setCurrentPage('chat-list')} 
+                  chatName={selectedChat || "Contato"} 
+                />
+              )}
               {currentPage === 'reports' && <ReportsPage />}
               {currentPage === 'settings' && (
                 <SettingsPage
