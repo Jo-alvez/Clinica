@@ -952,9 +952,40 @@ const NewChatModal = ({ currentUser, onClose, onChatCreated }: {
   const [mode, setMode] = useState<'SELECT' | 'GROUP_INFO'>('SELECT');
   const [isGroupMode, setIsGroupMode] = useState(false);
   const [selectedUsers, setSelectedUsers] = useState<AppUser[]>([]);
+  const [availableUsers, setAvailableUsers] = useState<AppUser[]>([]);
   const [groupName, setGroupName] = useState('');
+
+  useEffect(() => {
+    const fetchUsers = async () => {
+      if (!supabase) {
+        setAvailableUsers(INITIAL_USERS.filter(u => u.id !== currentUser.id));
+        return;
+      }
+      const { data } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('active', true)
+        .neq('id', currentUser.id);
+
+      if (data) {
+        setAvailableUsers(data.map(p => ({
+          id: p.id,
+          name: p.name,
+          username: p.username,
+          password: '',
+          role: p.role,
+          avatar: p.avatar ?? `https://ui-avatars.com/api/?name=${encodeURIComponent(p.name)}&background=25a1e4&color=fff`,
+          active: true,
+          createdAt: p.created_at
+        })));
+      } else {
+        setAvailableUsers(INITIAL_USERS.filter(u => u.id !== currentUser.id));
+      }
+    };
+    fetchUsers();
+  }, [currentUser.id]);
   
-  const users = INITIAL_USERS.filter(u => u.id !== currentUser.id);
+  const users = availableUsers;
 
   const toggleUser = (u: AppUser) => {
     if (selectedUsers.find(su => su.id === u.id)) {
