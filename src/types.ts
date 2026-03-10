@@ -151,3 +151,79 @@ export interface FinanceiroMovimentacao {
   observacoes?: string;
   criadoEm: string;
 }
+
+// ─── Chat ───────────────────────────────────────────────────────────────────
+
+export type ChatType = 'PRIVATE' | 'GROUP';
+export type MessageType = 'TEXT' | 'IMAGE' | 'DOCUMENT' | 'SYSTEM';
+export type MessageSendStatus = 'ENVIANDO' | 'ENVIADA' | 'ENTREGUE' | 'LIDA' | 'ERRO';
+
+export interface ChatConversation {
+  id: string;
+  type: ChatType;
+  nomeGroup?: string;
+  descricaoGroup?: string;
+  avatarUrl?: string;
+  createdByUserId?: string;
+  isInstitutional: boolean;
+  active: boolean;
+  lastMessageAt?: string;
+  lastMessagePreview?: string;
+  createdAt: string;
+  updatedAt: string;
+  // Campos auxiliares para UI
+  unreadCount?: number;
+  lastMessage?: string;
+  lastMessageTime?: string;
+}
+
+export interface ChatParticipant {
+  id: string;
+  conversationId: string;
+  userId: string;
+  roleInGroup: 'MEMBER' | 'ADMIN_GROUP';
+  joinedAt: string;
+  leftAt?: string;
+  active: boolean;
+  addedByUserId?: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  conversationId: string;
+  senderUserId: string;
+  messageType: MessageType;
+  textContent?: string;
+  fileUrl?: string;
+  fileName?: string;
+  fileSize?: number;
+  mimeType?: string;
+  thumbnailUrl?: string;
+  replyToMessageId?: string;
+  statusEnvio: MessageSendStatus;
+  editedAt?: string;
+  removedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  // Aux para UI
+  senderName?: string;
+}
+
+export interface ChatMessageRead {
+  id: string;
+  messageId: string;
+  userId: string;
+  readAt: string;
+}
+
+export interface ChatUserConversationSettings {
+  id: string;
+  userId: string;
+  conversationId: string;
+  isArchived: boolean;
+  isPinned: boolean;
+  mutedUntil?: string;
+  markedUnread: boolean;
+  lastOpenedAt?: string;
+  deletedForMeAt?: string;
+}

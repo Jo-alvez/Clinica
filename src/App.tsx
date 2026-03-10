@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   LayoutGrid,
   Calendar,
@@ -43,6 +43,9 @@ import {
   Activity,
   MoreHorizontal,
   Shield,
+  X,
+  Clock,
+  AlertCircle,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -62,6 +65,8 @@ import {
 import { AgendaPage } from './pages/AgendaPage';
 import { PatientsPage as PatientModule } from './pages/PatientsPages';
 import { supabase } from './lib/supabase';
+import { chatService } from './chatService';
+import { ChatConversation, ChatMessage, ChatType } from './types';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -756,109 +761,298 @@ const ServiceRecordPage = () => {
   );
 };
 
-const ChatListPage = ({ onSelectChat }: { onSelectChat: (name: string) => void }) => {
+const ChatListPage = ({ onSelectChat, currentUser }: { onSelectChat: (conv: ChatConversation) => void, currentUser: AppUser }) => {
+  const [conversations, setConversations] = useState<ChatConversation[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'PRIVATE' | 'GROUP' | 'ARCHIVED'>('PRIVATE');
+  const [showNewChat, setShowNewChat] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  const loadConversations = useCallback(async () => {
+    try {
+      const data = await chatService.getConversations(currentUser.id);
+      setConversations(data);
+    } catch (error) {
+      console.error('Erro ao carregar conversas:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [currentUser.id]);
+
+  useEffect(() => {
+    loadConversations();
+    const unsubscribe = chatService.subscribeToConversations(currentUser.id, loadConversations);
+    return () => unsubscribe();
+  }, [loadConversations, currentUser.id]);
+
+  const filteredConversations = conversations.filter(conv => {
+    const matchesTab = activeTab === 'ARCHIVED' ? conv.isArchived : (conv.type === activeTab && !conv.isArchived);
+    if (!matchesTab) return false;
+    if (!searchTerm) return true;
+    const name = conv.nomeGroup || 'Conversa';
+    return name.toLowerCase().includes(searchTerm.toLowerCase());
+  });
+
   return (
-    <div className="flex-1 pb-4 flex flex-col h-full overflow-hidden">
-      <Header 
-        title="Chat Interno" 
-        rightAction={
-          <button className="text-slate-900">
-            <Search size={24} />
-          </button>
-        }
-      />
-      
-      <div className="bg-white shrink-0">
-        <div className="flex border-b border-slate-100 px-4 gap-8">
-          <a className="flex flex-col items-center justify-center border-b-2 border-primary text-primary pb-3 pt-4" href="#">
-            <p className="text-sm font-bold tracking-wide">Conversas</p>
-          </a>
-          <a className="flex flex-col items-center justify-center border-b-2 border-transparent text-slate-500 pb-3 pt-4" href="#">
-            <p className="text-sm font-bold tracking-wide">Grupos</p>
-          </a>
-          <a className="flex flex-col items-center justify-center border-b-2 border-transparent text-slate-500 pb-3 pt-4" href="#">
-            <p className="text-sm font-bold tracking-wide">Arquivadas</p>
-          </a>
+    <div className="flex-1 pb-4 flex flex-col h-full overflow-hidden relative">
+      <header className="flex flex-col bg-white border-b border-slate-100 sticky top-0 z-40">
+        <div className="flex items-center p-4 justify-between">
+          <h2 className="text-slate-900 text-lg font-bold">Chat Interno</h2>
+          <div className="bg-primary/10 text-primary text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">
+            {currentUser.role}
+          </div>
         </div>
-      </div>
+        
+        <div className="px-4 pb-2">
+          <div className="relative group">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 size-16" size={16} />
+            <input 
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Buscar conversas..."
+              className="w-full bg-slate-100 border-none rounded-lg py-2 pl-10 pr-4 text-sm focus:ring-2 focus:ring-primary/20 outline-none"
+            />
+          </div>
+        </div>
+
+        <div className="flex px-4 gap-6">
+          {[
+            { id: 'PRIVATE', label: 'Conversas' },
+            { id: 'GROUP', label: 'Grupos' },
+            { id: 'ARCHIVED', label: 'Arquivadas' }
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
+              className={cn(
+                "pb-3 pt-2 text-sm font-bold transition-all border-b-2",
+                activeTab === tab.id ? "border-primary text-primary" : "border-transparent text-slate-400"
+              )}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </header>
 
       <div className="flex-1 overflow-y-auto">
-        {[
-          { name: 'Admin', time: '10:30', msg: 'Olá! A agenda de hoje foi confirmada.', unread: 0, img: 'https://picsum.photos/seed/admin/100/100' },
-          { name: 'Gerente', time: '09:45', msg: 'Pode revisar o relatório de insumos?', unread: 2, img: 'https://picsum.photos/seed/manager/100/100' },
-          { name: 'Recepcionista 1', time: 'Ontem', msg: 'A paciente Ana Maria chegou para o horário das 14h.', unread: 0, img: 'https://picsum.photos/seed/reception/100/100' },
-        ].map((chat, i) => (
-          <div key={i} onClick={() => onSelectChat(chat.name)} className={cn(
-            "flex items-center gap-4 px-4 min-h-[80px] py-3 hover:bg-slate-50 cursor-pointer transition-colors border-b border-slate-50",
-            chat.unread > 0 ? "bg-primary/5" : "bg-white"
-          )}>
-            <div className="relative">
-              {chat.isGroup ? (
-                <div className="flex items-center justify-center bg-primary/20 aspect-square rounded-full h-14 w-14 border-2 border-primary/30">
-                  <Users size={30} className="text-primary" />
-                </div>
-              ) : (
-                <div className="bg-center bg-no-repeat aspect-square bg-cover rounded-full h-14 w-14 border-2 border-slate-100" style={{ backgroundImage: `url(${chat.img})` }}></div>
-              )}
-              {!chat.isGroup && <div className="absolute bottom-0 right-0 size-3.5 bg-emerald-500 rounded-full border-2 border-white"></div>}
-            </div>
-            <div className="flex flex-col justify-center flex-1">
-              <div className="flex justify-between items-center mb-0.5">
-                <p className={cn("text-slate-900 text-base", chat.unread > 0 ? "font-bold" : "font-semibold")}>{chat.name}</p>
-                <p className={cn("text-xs", chat.unread > 0 ? "text-primary font-bold" : "text-slate-400 font-normal")}>{chat.time}</p>
-              </div>
-              <div className="flex justify-between items-center">
-                <p className={cn("text-sm line-clamp-1", chat.unread > 0 ? "text-slate-700 font-semibold" : "text-slate-500 font-normal")}>
-                  {chat.msg}
-                </p>
-                {chat.unread > 0 && (
-                  <div className="bg-primary text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">{chat.unread}</div>
-                )}
-              </div>
-            </div>
+        {loading ? (
+          <div className="flex flex-col items-center justify-center h-full gap-3 opacity-50">
+            <Activity className="animate-spin text-primary" size={32} />
+            <p className="text-sm font-medium">Carregando chats...</p>
           </div>
-        ))}
+        ) : filteredConversations.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full p-8 text-center gap-4 opacity-40">
+            <div className="size-20 bg-slate-100 rounded-full flex items-center justify-center">
+              <MessageSquare size={40} />
+            </div>
+            <div>
+              <p className="text-base font-bold text-slate-900">Nenhuma conversa encontrada</p>
+              <p className="text-sm">Inicie um novo papo com a equipe.</p>
+            </div>
+            <button 
+              onClick={() => setShowNewChat(true)}
+              className="mt-2 bg-primary text-white px-6 py-2 rounded-xl text-sm font-bold shadow-lg"
+            >
+              Iniciar Conversa
+            </button>
+          </div>
+        ) : (
+          filteredConversations.map((chat) => (
+            <div 
+              key={chat.id} 
+              onClick={() => onSelectChat(chat)} 
+              className={cn(
+                "flex items-center gap-4 px-4 min-h-[80px] py-3 hover:bg-slate-50 cursor-pointer transition-colors border-b border-slate-50",
+                (chat.unreadCount || 0) > 0 ? "bg-primary/5" : "bg-white"
+              )}
+            >
+              <div className="relative">
+                <div className="bg-center bg-no-repeat aspect-square bg-cover rounded-full h-14 w-14 border-2 border-slate-100 flex items-center justify-center overflow-hidden bg-slate-50">
+                  {chat.avatarUrl ? (
+                    <img src={chat.avatarUrl} alt="" className="w-full h-full object-cover" />
+                  ) : chat.type === 'GROUP' ? (
+                    <Users size={24} className="text-primary/60" />
+                  ) : (
+                    <User size={24} className="text-slate-400" />
+                  )}
+                </div>
+                <div className="absolute bottom-0 right-0 size-3.5 bg-emerald-500 rounded-full border-2 border-white"></div>
+              </div>
+              <div className="flex flex-col justify-center flex-1">
+                <div className="flex justify-between items-center mb-0.5">
+                  <p className={cn("text-slate-900 text-base", (chat.unreadCount || 0) > 0 ? "font-bold" : "font-semibold")}>
+                    {chat.nomeGroup || "Conversa"}
+                  </p>
+                  <p className="text-xs text-slate-400">{chat.lastMessageTime}</p>
+                </div>
+                <div className="flex justify-between items-center text-sm">
+                  <p className="text-slate-500 line-clamp-1 flex-1 mr-2">{chat.lastMessagePreview || "Sem mensagens ainda"}</p>
+                  {(chat.unreadCount || 0) > 0 && (
+                    <div className="bg-primary text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
+                      {chat.unreadCount}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))
+        )}
       </div>
       
-      <div className="absolute bottom-24 right-6">
+      <div className="absolute bottom-6 right-6 lg:bottom-5 lg:right-5">
         <button 
-          onClick={() => alert('Iniciando nova conversa...')}
-          className="bg-primary hover:bg-primary/90 text-white size-14 rounded-full shadow-lg flex items-center justify-center transition-transform active:scale-95"
+          onClick={() => setShowNewChat(true)}
+          className="bg-primary text-white size-14 rounded-full shadow-2xl flex items-center justify-center transition-all hover:scale-105 active:scale-95"
         >
-          <MessageSquare size={24} />
+          <Plus size={30} />
         </button>
       </div>
+
+      {showNewChat && (
+        <NewChatModal 
+          currentUser={currentUser} 
+          onClose={() => setShowNewChat(false)} 
+          onChatCreated={(conv) => {
+            setShowNewChat(false);
+            onSelectChat(conv);
+          }}
+        />
+      )}
     </div>
   );
 };
 
-const ChatDetailPage = ({ onBack, chatName = "Contato" }: { onBack: () => void, chatName?: string }) => {
-  const [messages, setMessages] = useState([
-    { id: 1, text: 'Olá! Como posso ajudar hoje?', time: '09:15', sender: 'other' },
-  ]);
+const NewChatModal = ({ currentUser, onClose, onChatCreated }: { 
+  currentUser: AppUser, 
+  onClose: () => void,
+  onChatCreated: (c: ChatConversation) => void 
+}) => {
+  const [loading, setLoading] = useState(false);
+  const users = INITIAL_USERS.filter(u => u.id !== currentUser.id);
+
+  const startPrivateChat = async (otherUser: AppUser) => {
+    setLoading(true);
+    try {
+      const conv = await chatService.createPrivateChat(currentUser.id, otherUser.id);
+      if (conv) {
+        onChatCreated({ ...conv, nomeGroup: otherUser.name, avatarUrl: otherUser.avatar });
+      }
+    } catch (error) {
+      console.error('Erro ao criar chat:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[80vh]"
+      >
+        <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+          <h3 className="text-lg font-bold">Nova Conversa</h3>
+          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
+            <X size={20} />
+          </button>
+        </div>
+        
+        <div className="overflow-y-auto flex-1 p-2 space-y-1">
+          {users.map(u => (
+            <button 
+              key={u.id}
+              onClick={() => startPrivateChat(u)}
+              disabled={loading}
+              className="w-full flex items-center gap-3 p-3 hover:bg-slate-50 rounded-xl transition-all text-left"
+            >
+              <img src={u.avatar} className="size-10 rounded-full border border-slate-200" alt="" />
+              <div className="flex-1">
+                <p className="font-bold text-slate-900 text-sm">{u.name}</p>
+                <p className="text-xs text-slate-400 capitalize">{u.role.toLowerCase()}</p>
+              </div>
+              <ChevronRight size={18} className="text-slate-300" />
+            </button>
+          ))}
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
+const ChatDetailPage = ({ onBack, conversation, currentUser }: { onBack: () => void, conversation: ChatConversation, currentUser: AppUser }) => {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
+  const [loading, setLoading] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const loadMessages = useCallback(async () => {
+    try {
+      const data = await chatService.getMessages(conversation.id);
+      setMessages(data as any);
+    } catch (error) {
+      console.error('Erro ao carregar mensagens:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [conversation.id]);
+
+  useEffect(() => {
+    loadMessages();
+    const unsubscribe = chatService.subscribeToMessages(conversation.id, (newMsg) => {
+      setMessages(prev => {
+        // Evita duplicados se já estiver na lista (ex: enviada localmente)
+        if (prev.some(m => m.id === newMsg.id)) return prev;
+        return [...prev, newMsg];
+      });
+    });
+    return () => unsubscribe();
+  }, [loadMessages, conversation.id]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+    if (!loading) scrollToBottom();
+  }, [messages, loading]);
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!inputValue.trim()) return;
     
-    const newMessage = {
-      id: Date.now(),
-      text: inputValue,
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      sender: 'me'
+    const text = inputValue.trim();
+    setInputValue('');
+
+    // Optimistic update
+    const tempId = `temp_${Date.now()}`;
+    const optimisticMsg: any = {
+      id: tempId,
+      conversationId: conversation.id,
+      senderUserId: currentUser.id,
+      messageType: 'TEXT',
+      textContent: text,
+      statusEnvio: 'ENVIANDO',
+      createdAt: new Date().toISOString()
     };
     
-    setMessages(prev => [...prev, newMessage]);
-    setInputValue('');
+    setMessages(prev => [...prev, optimisticMsg]);
+
+    try {
+      const sent = await chatService.sendMessage({
+        conversationId: conversation.id,
+        senderId: currentUser.id,
+        type: 'TEXT',
+        content: text
+      });
+      
+      if (sent) {
+        setMessages(prev => prev.map(m => m.id === tempId ? sent as any : m));
+      }
+    } catch (error) {
+      console.error('Falha ao enviar:', error);
+      setMessages(prev => prev.map(m => m.id === tempId ? { ...m, statusEnvio: 'ERRO' } : m));
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -875,16 +1069,24 @@ const ChatDetailPage = ({ onBack, chatName = "Contato" }: { onBack: () => void, 
             <ArrowLeft size={24} />
           </button>
           <div className="relative">
-            <div className="w-10 h-10 rounded-full bg-slate-200 overflow-hidden border border-slate-100" style={{ backgroundImage: 'url("https://picsum.photos/seed/user/100/100")', backgroundSize: 'cover' }}></div>
+            <div className="w-10 h-10 rounded-full bg-slate-200 overflow-hidden border border-slate-100 flex items-center justify-center bg-slate-100">
+              {conversation.avatarUrl ? (
+                <img src={conversation.avatarUrl} alt="" className="w-full h-full object-cover" />
+              ) : conversation.type === 'GROUP' ? (
+                <Users size={20} className="text-primary/60" />
+              ) : (
+                <User size={20} className="text-slate-400" />
+              )}
+            </div>
             <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
           </div>
-          <div className="flex flex-col">
-            <h2 className="text-slate-900 text-base font-bold leading-tight">{chatName}</h2>
-            <span className="text-primary text-xs font-medium">Online</span>
+          <div className="flex flex-col flex-1 min-w-0">
+            <h2 className="text-slate-900 text-base font-bold leading-tight truncate">{conversation.nomeGroup || "Conversa"}</h2>
+            <span className="text-primary text-[10px] font-bold uppercase tracking-tight">Online • {conversation.type === 'GROUP' ? 'Grupo' : 'Privado'}</span>
           </div>
         </div>
         <div className="flex gap-1">
-          <button className="text-slate-600 p-2 rounded-full hover:bg-slate-100">
+          <button className="text-slate-600 p-2 rounded-full hover:bg-slate-100 hidden sm:block">
             <Video size={20} />
           </button>
           <button className="text-slate-600 p-2 rounded-full hover:bg-slate-100">
@@ -894,42 +1096,71 @@ const ChatDetailPage = ({ onBack, chatName = "Contato" }: { onBack: () => void, 
       </header>
 
       <main className="flex-1 overflow-y-auto p-4 space-y-4">
-        <div className="flex justify-center my-4">
-          <span className="px-3 py-1 bg-slate-200 text-slate-500 text-[10px] font-bold uppercase tracking-wider rounded-full">Hoje</span>
-        </div>
-
-        {messages.map((msg) => (
-          <div key={msg.id} className={cn("flex items-end gap-2 max-w-[85%]", msg.sender === 'me' ? "ml-auto flex-col items-end gap-1" : "")}>
-            {msg.sender === 'other' && (
-              <div className="w-8 h-8 rounded-full bg-slate-200 shrink-0 mb-1" style={{ backgroundImage: 'url("https://picsum.photos/seed/user/100/100")', backgroundSize: 'cover' }}></div>
-            )}
-            
-            {msg.sender === 'other' ? (
-              <div className="flex flex-col gap-1">
-                <div className="bg-white text-slate-800 p-3 rounded-2xl rounded-bl-none shadow-sm border border-slate-100">
-                  <p className="text-sm">{msg.text}</p>
-                </div>
-                <span className="text-[10px] text-slate-400 ml-1">{msg.time}</span>
-              </div>
-            ) : (
-              <>
-                <div className="bg-primary text-white p-3 rounded-2xl rounded-br-none shadow-md">
-                  <p className="text-sm">{msg.text}</p>
-                </div>
-                <div className="flex items-center gap-1 mr-1">
-                  <span className="text-[10px] text-slate-400">{msg.time}</span>
-                  <Check size={14} className="text-primary" />
-                </div>
-              </>
-            )}
+        {loading ? (
+          <div className="flex items-center justify-center h-full gap-2 opacity-50">
+            <Activity className="animate-spin text-primary" size={24} />
+            <span className="text-sm font-medium">Carregando mensagens...</span>
           </div>
-        ))}
-        <div ref={messagesEndRef} />
+        ) : messages.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full opacity-30 gap-2">
+            <MessageSquare size={48} />
+            <p className="text-sm font-bold">Sem mensagens</p>
+          </div>
+        ) : (
+          <>
+            <div className="flex justify-center my-4">
+              <span className="px-3 py-1 bg-slate-200 text-slate-500 text-[10px] font-bold uppercase tracking-wider rounded-full">Hoje</span>
+            </div>
+
+            {messages.map((msg) => {
+              const isMe = msg.senderUserId === currentUser.id;
+              return (
+                <div key={msg.id} className={cn("flex flex-col gap-1 max-w-[85%]", isMe ? "ml-auto items-end" : "items-start")}>
+                  {!isMe && conversation.type === 'GROUP' && (
+                    <span className="text-[10px] font-bold text-slate-400 ml-3 mb-1">Equipe</span>
+                  )}
+                  <div className="flex items-end gap-2">
+                    {!isMe && (
+                      <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center overflow-hidden border border-slate-100 shrink-0 mb-1">
+                        <User size={14} className="text-slate-400" />
+                      </div>
+                    )}
+                    <div className={cn(
+                      "p-3 rounded-2xl shadow-sm border",
+                      isMe 
+                        ? "bg-primary text-white border-primary rounded-br-none" 
+                        : "bg-white text-slate-800 border-slate-100 rounded-bl-none"
+                    )}>
+                      <p className="text-sm leading-relaxed">{msg.textContent}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 px-1 py-0.5">
+                    <span className="text-[9px] text-slate-400 font-medium">
+                      {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                    {isMe && (
+                      <div className="flex items-center">
+                         {msg.statusEnvio === 'ENVIANDO' ? (
+                           <Clock size={10} className="text-slate-300" />
+                         ) : msg.statusEnvio === 'ERRO' ? (
+                           <AlertCircle size={10} className="text-red-400" />
+                         ) : (
+                           <Check size={12} className={cn("text-white/80", msg.statusEnvio === 'LIDA' && "text-emerald-300")} />
+                         )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            <div ref={messagesEndRef} />
+          </>
+        )}
       </main>
 
       <footer className="p-4 bg-white border-t border-slate-100">
         <div className="flex items-center gap-2">
-          <button onClick={() => alert('Selecione um arquivo ou foto...')} className="text-slate-400 hover:text-primary p-2">
+          <button onClick={() => alert('Selecione um arquivo ou foto...')} className="text-slate-400 hover:text-primary p-2 transition-colors">
             <Plus size={24} />
           </button>
           <div className="flex-1 relative">
@@ -937,18 +1168,18 @@ const ChatDetailPage = ({ onBack, chatName = "Contato" }: { onBack: () => void, 
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={handleKeyDown}
-              className="w-full bg-slate-100 border-none rounded-full py-3 px-5 text-sm focus:ring-2 focus:ring-primary/50 text-slate-900 placeholder-slate-500" 
-              placeholder="Digite sua mensagem..." 
+              className="w-full bg-slate-100 border-none rounded-full py-3 px-5 text-sm focus:ring-2 focus:ring-primary/50 text-slate-900 placeholder-slate-500 transition-all" 
+              placeholder="Sua mensagem..." 
               type="text"
             />
-            <button onClick={() => alert('Emoji picker... 🤩')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+            <button onClick={() => alert('Emoji picker... 🤩')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-primary transition-colors">
               <Smile size={20} />
             </button>
           </div>
           <button 
             onClick={handleSend}
             disabled={!inputValue.trim()}
-            className="bg-primary text-white w-11 h-11 flex items-center justify-center rounded-full shadow-lg shadow-primary/30 hover:bg-primary/90 transition-all active:scale-95 disabled:opacity-50 disabled:active:scale-100"
+            className="bg-primary text-white w-11 h-11 flex items-center justify-center rounded-full shadow-lg shadow-primary/30 hover:bg-primary/90 transition-all active:scale-95 disabled:opacity-50 disabled:grayscale disabled:scale-100"
           >
             <Send size={20} />
           </button>
@@ -1645,7 +1876,7 @@ export default function App() {
   const [pacientes, setPacientes] = useState<Paciente[]>(INITIAL_PACIENTES);
   const [anamneses, setAnamneses] = useState<Anamnese[]>(INITIAL_ANAMNESES);
   const [atendimentos] = useState<Atendimento[]>(INITIAL_ATENDIMENTOS);
-  const [selectedChat, setSelectedChat] = useState<string | null>(null);
+  const [selectedChat, setSelectedChat] = useState<ChatConversation | null>(null);
   const servicos = INITIAL_SERVICOS;
 
   // ── Restore Supabase session on mount ────────────────────────────────────
@@ -1788,16 +2019,20 @@ export default function App() {
               )}
               {currentPage === 'service-record' && <ServiceRecordPage />}
               {currentPage === 'inventory' && <InventoryPage />}
-              {currentPage === 'chat-list' && (
-                <ChatListPage onSelectChat={(name) => {
-                  setSelectedChat(name);
-                  setCurrentPage('chat-detail');
-                }} />
+              {currentPage === 'chat-list' && currentUser && (
+                <ChatListPage 
+                  currentUser={currentUser}
+                  onSelectChat={(conv) => {
+                    setSelectedChat(conv);
+                    setCurrentPage('chat-detail');
+                  }} 
+                />
               )}
-              {currentPage === 'chat-detail' && (
+              {currentPage === 'chat-detail' && currentUser && selectedChat && (
                 <ChatDetailPage 
+                  currentUser={currentUser}
                   onBack={() => setCurrentPage('chat-list')} 
-                  chatName={selectedChat || "Contato"} 
+                  conversation={selectedChat} 
                 />
               )}
               {currentPage === 'reports' && <ReportsPage />}
