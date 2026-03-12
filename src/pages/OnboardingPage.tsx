@@ -147,12 +147,12 @@ export const OnboardingPage: React.FC<{
       <div className="hidden md:flex md:w-1/3 bg-slate-900 text-white p-12 flex-col justify-between relative overflow-hidden">
          <div className="z-10">
             <div className="flex items-center mb-12 cursor-pointer" onClick={() => onNavigateLogin()}>
-              <img src="/logo.png" alt="ProClin" className="h-16 w-auto object-contain brightness-0 invert" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextElementSibling!.style.display = 'flex'; }} />
+              <img src="/kraf-logo.png" alt="KRAF" className="h-16 w-auto object-contain brightness-0 invert" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextElementSibling!.style.display = 'flex'; }} />
               <div className="hidden items-center gap-2">
                 <div className="w-10 h-10 bg-primary/20 rounded-2xl flex items-center justify-center">
                   <Sparkles size={24} className="text-primary" />
                 </div>
-                <span className="font-black text-2xl tracking-tight">ProClin</span>
+                <span className="font-black text-2xl tracking-tight">KRAF</span>
               </div>
             </div>
             <h2 className="text-4xl font-black mb-6 leading-tight max-w-sm">Junte-se às melhores clínicas e consultórios.</h2>

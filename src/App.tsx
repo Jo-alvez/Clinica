@@ -180,9 +180,8 @@ const Sidebar = ({ currentPage, onNavigate, currentUser, onLogout, installedModu
 
   return (
     <aside className="hidden lg:flex flex-col w-64 bg-white border-r border-slate-100 h-full shrink-0 z-40">
-      {/* Logo */}
       <div className="flex items-center px-6 py-8">
-        <img src="/logo.png" alt="ProClin" className="h-12 w-auto object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextElementSibling!.style.display = 'flex'; }} />
+        <img src="/kraf-logo.png" alt="KRAF" className="h-12 w-auto object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextElementSibling!.style.display = 'flex'; }} />
         <div className="hidden items-center gap-3">
           <div className="w-10 h-10 bg-primary/10 rounded-2xl flex items-center justify-center text-primary shrink-0 shadow-sm">
             <Sparkles size={22} className="text-primary" />
@@ -394,7 +393,7 @@ const LoginPage = ({ onLogin, onBack }: { onLogin: (user: AppUser) => void, onBa
         className="w-full max-w-[420px] space-y-8 bg-white p-8 rounded-xl shadow-sm border border-slate-200"
       >
         <div className="flex flex-col items-center text-center space-y-4">
-          <img src="/logo.png" alt="ProClin" className="h-32 w-auto object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextElementSibling!.style.display = 'block'; }} />
+          <img src="/kraf-logo.png" alt="KRAF" className="h-28 w-auto object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextElementSibling!.style.display = 'block'; }} />
           <div className="hidden space-y-1 relative">
             {onBack && (
               <button onClick={onBack} className="absolute -left-16 top-1/2 -translate-y-1/2 p-2 text-slate-400 hover:text-slate-800 transition-colors" title="Voltar para Início">

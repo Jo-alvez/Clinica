@@ -81,9 +81,9 @@ export const SuperAdminPage: React.FC = () => {
         <div className="flex items-center gap-6 relative z-10">
           <div className="size-14 bg-white/10 backdrop-blur-xl rounded-2xl flex items-center justify-center border border-white/10 shadow-inner">
             <img 
-              src="/logo.png" 
-              alt="Logo" 
-              className="h-10 w-auto object-contain brightness-0 invert" 
+              src="/kraf-logo.png" 
+              alt="KRAF Logo" 
+              className="h-10 w-auto object-contain" 
               onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextElementSibling!.className = 'flex'; }}
             />
             <div className="hidden items-center justify-center font-black text-xl tracking-tighter italic text-white">KRAF</div>

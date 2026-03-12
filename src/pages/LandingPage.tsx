@@ -8,12 +8,12 @@ export const LandingPage: React.FC<{ onNavigate: (page: 'login' | 'onboarding') 
       {/* Header */}
       <header className="absolute top-0 w-full p-6 flex justify-between items-center z-50">
         <div className="flex items-center">
-          <img src="/logo.png" alt="ProClin" className="h-16 w-auto object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextElementSibling!.style.display = 'flex'; }} />
+          <img src="/kraf-logo.png" alt="KRAF Logo" className="h-16 w-auto object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextElementSibling!.style.display = 'flex'; }} />
           <div className="hidden items-center gap-2">
             <div className="w-10 h-10 bg-primary/10 rounded-2xl flex items-center justify-center">
               <Sparkles size={24} className="text-primary" />
             </div>
-            <span className="font-black text-2xl text-slate-900 tracking-tight">ProClin</span>
+            <span className="font-black text-2xl text-slate-900 tracking-tight">KRAF</span>
           </div>
         </div>
         <div className="flex gap-4">
@@ -101,7 +101,7 @@ export const LandingPage: React.FC<{ onNavigate: (page: 'login' | 'onboarding') 
       {/* Why Choose Section */}
       <section className="py-24 bg-slate-50 px-6">
         <div className="max-w-7xl mx-auto text-center">
-           <h2 className="text-3xl md:text-4xl font-black text-slate-900 mb-16">Por que escolher o ProClin?</h2>
+           <h2 className="text-3xl md:text-4xl font-black text-slate-900 mb-16">Por que escolher a KRAF?</h2>
            <div className="grid md:grid-cols-3 gap-8">
               {[
                 { icon: User, title: 'Prontuários Personalizáveis', desc: 'Mapeamentos, evoluções diárias e histórico completo acessível de qualquer lugar.' },
@@ -156,7 +156,7 @@ export const LandingPage: React.FC<{ onNavigate: (page: 'login' | 'onboarding') 
         <div className="max-w-7xl mx-auto">
            <div className="text-center mb-16">
              <h2 className="text-3xl md:text-4xl font-black mb-4">Como funciona?</h2>
-             <p className="text-xl text-slate-400 max-w-2xl mx-auto">Comece a usar o ProClin em menos de 5 minutos.</p>
+             <p className="text-xl text-slate-400 max-w-2xl mx-auto">Comece a usar a KRAF em menos de 5 minutos.</p>
            </div>
 
            <div className="grid md:grid-cols-3 gap-12 text-center relative">
