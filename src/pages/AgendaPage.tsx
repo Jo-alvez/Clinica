@@ -1,11 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import {
   ChevronLeft, ChevronRight, Plus, Calendar, Clock,
-  User, X, Check, AlertCircle, MoreHorizontal, MapPin,
+  User, X, Check, AlertCircle, MoreHorizontal, MapPin, Activity
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn, formatCurrency, addMinutes } from '../utils';
-import { Agendamento, AgendamentoStatus, AppUser, Servico, Paciente } from '../types';
+import { Agendamento, AgendamentoStatus, AppUser, Procedimento, Paciente } from '../types';
 import { can } from '../permissions';
 
 // ─── Status helpers ──────────────────────────────────────────────────────────
@@ -14,7 +14,7 @@ const STATUS_CONFIG: Record<AgendamentoStatus, { label: string; color: string; d
   AGENDADO:       { label: 'Agendado',       color: 'bg-blue-100 text-blue-700',    dot: 'bg-blue-500' },
   CONFIRMADO:     { label: 'Confirmado',     color: 'bg-green-100 text-green-700',  dot: 'bg-green-500' },
   AGUARDANDO:     { label: 'Aguardando',     color: 'bg-amber-100 text-amber-700',  dot: 'bg-amber-500' },
-  EM_ATENDIMENTO: { label: 'Em Atendimento', color: 'bg-purple-100 text-purple-700',dot: 'bg-purple-500' },
+  EM_ATENDIMENTO: { label: 'Em Sessao', color: 'bg-purple-100 text-purple-700',dot: 'bg-purple-500' },
   FINALIZADO:     { label: 'Finalizado',     color: 'bg-slate-100 text-slate-500',  dot: 'bg-slate-400' },
   CANCELADO:      { label: 'Cancelado',      color: 'bg-red-100 text-red-600',      dot: 'bg-red-500' },
   FALTOU:         { label: 'Faltou',         color: 'bg-red-50 text-red-400',       dot: 'bg-red-300' },
@@ -47,7 +47,7 @@ interface AgendaPageProps {
   currentUser: AppUser;
   agendamentos: Agendamento[];
   pacientes: Paciente[];
-  servicos: Servico[];
+  servicos: Procedimento[];
   onAddAgendamento: (a: Agendamento) => void;
   onUpdateStatus: (id: string, status: AgendamentoStatus) => void;
 }
@@ -90,7 +90,7 @@ const AgendamentoDetail = ({
 }: {
   agendamento: Agendamento;
   paciente: Paciente | undefined;
-  servico: Servico | undefined;
+  servico: Procedimento | undefined;
   onClose: () => void;
   onStatusChange: (status: AgendamentoStatus) => void;
   currentUser: AppUser;
@@ -162,8 +162,23 @@ const AgendamentoDetail = ({
           {/* Status */}
           <div className="flex items-center justify-between">
             <span className="text-sm font-semibold text-slate-500">Status</span>
-            <span className={cn('text-xs font-bold px-3 py-1.5 rounded-full', cfg.color)}>{cfg.label}</span>
+            <span className={cn('text-xs font-bold px-3 py-1.5 rounded-xl', cfg.color)}>{cfg.label}</span>
           </div>
+
+          {/* Quick Start Action */}
+          {(agendamento.status === 'AGUARDANDO' || agendamento.status === 'CONFIRMADO' || agendamento.status === 'EM_ATENDIMENTO') && (
+            <motion.button
+              whileTap={{ scale: 0.98 }}
+              onClick={() => {
+                onStatusChange('EM_ATENDIMENTO');
+                onClose();
+              }}
+              className="w-full py-4 bg-gradient-to-r from-primary to-primary-soft text-white rounded-2xl font-bold shadow-xl shadow-primary/20 flex items-center justify-center gap-2"
+            >
+              <Activity size={20} />
+              {agendamento.status === 'EM_ATENDIMENTO' ? 'Continuar Atendimento' : 'Iniciar Atendimento'}
+            </motion.button>
+          )}
 
           {agendamento.observacoes && (
             <div className="bg-amber-50 border border-amber-100 rounded-xl p-3">
@@ -254,7 +269,9 @@ export const AgendaPage: React.FC<AgendaPageProps> = ({
     const novo: Agendamento = {
       id: `ag_${Date.now()}`,
       pacienteId: form.pacienteId,
+      procedimentoId: form.servicoId, // Map servicoId to procedimentoId
       servicoId: form.servicoId,
+      profissionalId: currentUser.id, // DEFAULT: current user is the professional
       criadoPorUserId: currentUser.id,
       dataAgendada: form.dataAgendada,
       horaInicio: form.horaInicio,
@@ -278,7 +295,7 @@ export const AgendaPage: React.FC<AgendaPageProps> = ({
 
   const canCreate = can(currentUser.role, 'agenda.create');
   const selectedAgPaciente = selectedAgendamento ? pacientes.find(p => p.id === selectedAgendamento.pacienteId) : undefined;
-  const selectedAgServico = selectedAgendamento ? servicos.find(s => s.id === selectedAgendamento.servicoId) : undefined;
+  const selectedAgProcedimento = selectedAgendamento ? servicos.find(s => s.id === selectedAgendamento.servicoId) : undefined;
 
   // Month header label
   const monthLabel = `${MONTHS_PT[selectedDate.getMonth()]} ${selectedDate.getFullYear()}`;
@@ -560,7 +577,7 @@ export const AgendaPage: React.FC<AgendaPageProps> = ({
           <AgendamentoDetail
             agendamento={selectedAgendamento}
             paciente={selectedAgPaciente}
-            servico={selectedAgServico}
+            servico={selectedAgProcedimento}
             onClose={() => setSelectedAgendamento(null)}
             onStatusChange={(status) => {
               onUpdateStatus(selectedAgendamento.id, status);

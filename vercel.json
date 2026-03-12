@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/webhook/mercadopago",
+      "destination": "/api/webhook/mercadopago"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

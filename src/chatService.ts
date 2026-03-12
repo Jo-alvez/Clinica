@@ -1,13 +1,49 @@
 import { supabase } from './lib/supabase';
 import { ChatConversation, ChatParticipant, ChatMessage, ChatUserConversationSettings } from './types';
 
+// Helpers to map snake_case from DB to camelCase for UI
+const mapConversation = (conv: any): ChatConversation => ({
+  id: conv.id,
+  type: conv.type,
+  nomeGroup: conv.nome_group,
+  descricaoGroup: conv.descricao_group,
+  avatarUrl: conv.avatar_url,
+  createdByUserId: conv.created_by_user_id,
+  isInstitutional: conv.is_institutional,
+  active: conv.active,
+  lastMessageAt: conv.last_message_at,
+  lastMessagePreview: conv.last_message_preview,
+  createdAt: conv.created_at,
+  updatedAt: conv.updated_at,
+  unreadCount: conv.unreadCount || 0,
+});
+
+const mapMessage = (msg: any): ChatMessage => ({
+  id: msg.id,
+  conversationId: msg.conversation_id,
+  senderUserId: msg.sender_user_id,
+  messageType: msg.message_type,
+  textContent: msg.text_content,
+  fileUrl: msg.file_url,
+  fileName: msg.file_name,
+  fileSize: msg.file_size,
+  mimeType: msg.mime_type,
+  thumbnailUrl: msg.thumbnail_url,
+  replyToMessageId: msg.reply_to_message_id,
+  statusEnvio: msg.status_envio,
+  editedAt: msg.edited_at,
+  removedAt: msg.removed_at,
+  createdAt: msg.created_at,
+  updatedAt: msg.updated_at,
+});
+
 export const chatService = {
   // --- Conversations ---
   
   async getConversations(userId: string) {
     if (!supabase) return [];
     
-    // Get conversations where the user is a participant
+    // 1. Get conversations where the user is a participant
     const { data: participants, error: pError } = await supabase
       .from('chat_participants')
       .select('conversation_id')
@@ -17,9 +53,9 @@ export const chatService = {
     if (pError || !participants) return [];
     
     const conversationIds = participants.map(p => p.conversation_id);
-    
     if (conversationIds.length === 0) return [];
     
+    // 2. Fetch conversations details
     const { data: conversations, error: cError } = await supabase
       .from('chat_conversations')
       .select('*')
@@ -27,23 +63,46 @@ export const chatService = {
       .eq('active', true)
       .order('last_message_at', { ascending: false });
       
-    if (cError) return [];
+    if (cError || !conversations) return [];
     
-    // Get settings (archived, pinned) for these conversations
+    // 3. Fetch all participants for these conversations to get names/avatars in PRIVATE chats
+    const { data: allParticipants } = await supabase
+      .from('chat_participants')
+      .select('conversation_id, user_id, profiles:user_id(name, avatar)')
+      .in('conversation_id', conversationIds)
+      .eq('active', true);
+
+    // 4. Get individual user settings
     const { data: settings } = await supabase
       .from('chat_user_conversation_settings')
       .select('*')
       .eq('user_id', userId)
       .in('conversation_id', conversationIds);
       
-    // Merge conversations with settings
     return conversations.map(conv => {
       const convSetting = settings?.find(s => s.conversation_id === conv.id);
+      const mapped = mapConversation(conv);
+      
+      // If it's a private chat, find the OTHER user to use as Title/Avatar
+      if (conv.type === 'PRIVATE' && allParticipants) {
+        const otherParticipant = allParticipants.find(p => p.conversation_id === conv.id && p.user_id !== userId);
+        if (otherParticipant && otherParticipant.profiles) {
+          const profile = otherParticipant.profiles as any;
+          mapped.nomeGroup = profile.name;
+          mapped.avatarUrl = profile.avatar;
+        }
+      }
+
+      // Format last message time for UI
+      if (mapped.lastMessageAt) {
+        const date = new Date(mapped.lastMessageAt);
+        mapped.lastMessageTime = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      }
+
       return {
-        ...conv,
+        ...mapped,
         isArchived: convSetting?.is_archived ?? false,
         isPinned: convSetting?.is_pinned ?? false,
-        unreadCount: 0, // Will be calculated after
       };
     });
   },
@@ -52,7 +111,6 @@ export const chatService = {
     if (!supabase) return null;
 
     // Check if a private chat already exists between these two
-    // This is complex in SQL without a composite unique, so we'll check it here
     const { data: myChats } = await supabase
       .from('chat_participants')
       .select('conversation_id')
@@ -78,7 +136,7 @@ export const chatService = {
           .eq('type', 'PRIVATE')
           .single();
           
-        if (conv) return conv;
+        if (conv) return mapConversation(conv);
       }
     }
 
@@ -100,7 +158,7 @@ export const chatService = {
       { conversation_id: newConv.id, user_id: otherUserId }
     ]);
 
-    return newConv;
+    return mapConversation(newConv);
   },
 
   async createGroupChat(params: {
@@ -146,7 +204,7 @@ export const chatService = {
       content: 'Grupo criado'
     });
 
-    return newConv;
+    return mapConversation(newConv);
   },
 
   async getConversationDetails(conversationId: string) {
@@ -164,12 +222,12 @@ export const chatService = {
     // Get participants with user profiles
     const { data: participants } = await supabase
       .from('chat_participants')
-      .select('*, profiles:user_id(*)') // Assuming profiles table matches auth.users(id)
+      .select('*, profiles:user_id(*)')
       .eq('conversation_id', conversationId)
       .eq('active', true);
       
     return {
-      ...conv,
+      ...mapConversation(conv),
       participants: participants || []
     };
   },
@@ -178,9 +236,6 @@ export const chatService = {
 
   async uploadChatFile(file: File, path: string) {
     if (!supabase) return null;
-    
-    // Create bucket if it doesn't exist (only if you have permission)
-    // For now assume 'chat-files' bucket exists
     
     const fileName = `${Date.now()}_${file.name}`;
     const { data, error } = await supabase.storage
@@ -229,13 +284,13 @@ export const chatService = {
       .limit(limit);
       
     if (error) return [];
-    return data.reverse(); // Return in chronological order
+    return data.reverse().map(mapMessage); // Return in chronological order
   },
 
   async sendMessage(params: {
     conversationId: string;
     senderId: string;
-    type: 'TEXT' | 'IMAGE' | 'DOCUMENT';
+    type: 'TEXT' | 'IMAGE' | 'DOCUMENT' | 'SYSTEM';
     content?: string;
     fileUrl?: string;
     fileName?: string;
@@ -260,7 +315,10 @@ export const chatService = {
       .select()
       .single();
 
-    if (error) return null;
+    if (error) {
+      console.error('Erro ao enviar mensagem:', error);
+      return null;
+    }
 
     // Update conversation last_message
     await supabase.from('chat_conversations')
@@ -270,7 +328,7 @@ export const chatService = {
       })
       .eq('id', params.conversationId);
 
-    return data;
+    return mapMessage(data);
   },
 
   // --- Realtime ---
@@ -289,7 +347,7 @@ export const chatService = {
           filter: `conversation_id=eq.${conversationId}`
         },
         (payload) => {
-          onMessage(payload.new as ChatMessage);
+          onMessage(mapMessage(payload.new));
         }
       )
       .subscribe();

@@ -49,27 +49,47 @@ import {
   Pin,
   BellOff,
   Archive,
+  Sparkles,
+  HelpCircle,
+  BookOpen,
+  DollarSign,
+  Syringe,
+  UserPlus,
+  RefreshCw,
+  TrendingUp,
+  CreditCard,
+  PackageOpen,
+  CheckCircle2,
+  Ticket
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
-  BarChart, Bar, XAxis, ResponsiveContainer,
-  LineChart, Line, Cell,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer,
+  LineChart, Line, Cell, AreaChart, Area, Tooltip as RechartsTooltip
 } from 'recharts';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
 // New architecture imports
-import { AppUser, Agendamento, AgendamentoStatus, Paciente, Anamnese, Atendimento, FinanceiroMovimentacao } from './types';
+import { AppUser, Agendamento, AgendamentoStatus, Paciente, AnamneseEstetica, Sessao, FinanceiroMovimentacao, Procedimento, FotoClinica, Consentimento, Pacote, PacotePaciente, AplicacaoToxina, Modulo, ClinicaModulo } from './types';
 import { can, ROLE_LABELS, ROLE_COLORS } from './permissions';
 import {
-  INITIAL_USERS, INITIAL_SERVICOS, INITIAL_PACIENTES,
-  INITIAL_ANAMNESES, INITIAL_AGENDAMENTOS, INITIAL_ATENDIMENTOS, INITIAL_FINANCEIRO,
+  INITIAL_USERS, INITIAL_PROCEDIMENTOS, INITIAL_PACIENTES,
+  INITIAL_ANAMNESES, INITIAL_AGENDAMENTOS, INITIAL_SESSAO, INITIAL_FINANCEIRO,
+  INITIAL_PACOTES, INITIAL_PACOTES_PACIENTE, INITIAL_TOXINA
 } from './data';
 import { AgendaPage } from './pages/AgendaPage';
 import { PatientsPage as PatientModule } from './pages/PatientsPages';
 import { supabase } from './lib/supabase';
 import { chatService } from './chatService';
 import { ChatConversation, ChatMessage, ChatType } from './types';
+import { SalesPage } from './pages/SalesPage';
+import { InventoryPage } from './pages/InventoryPage';
+import { HelpPage } from './pages/HelpPage';
+import { SuperAdminPage } from './pages/SuperAdminPage';
+import { SubscriptionPage } from './pages/SubscriptionPage';
+import { LandingPage } from './pages/LandingPage';
+import { OnboardingPage } from './pages/OnboardingPage';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -83,36 +103,53 @@ type Page =
   | 'inventory'
   | 'patients'
   | 'service-record'
+  | 'sales'
+  | 'reports'
   | 'chat-list'
   | 'chat-detail'
-  | 'reports'
+  | 'help'
   | 'settings'
+  | 'subscription'
+  | 'superadmin' // ADDED
   | 'clinic-data'
   | 'manage-services'
   | 'manage-users'
   | 'agenda-settings'
-  | 'backup-data';
+  | 'backup-data'
+  | 'store-modules';
 
 // --- Components ---
 
 const NAV_ITEMS = [
-  { id: 'dashboard', label: 'Início', icon: LayoutGrid },
-  { id: 'agenda', label: 'Agenda', icon: Calendar },
-  { id: 'patients', label: 'Pacientes', icon: Users },
-  { id: 'inventory', label: 'Estoque', icon: Package },
-  { id: 'chat-list', label: 'Chat', icon: MessageSquare },
-  { id: 'settings', label: 'Ajustes', icon: Settings },
+  { id: 'dashboard', label: 'Início', icon: LayoutGrid, adminOnly: false },
+  { id: 'agenda', label: 'Agenda', icon: Calendar, adminOnly: false },
+  { id: 'patients', label: 'Pacientes', icon: Users, adminOnly: false },
+  { id: 'inventory', label: 'Estoque', icon: Package, adminOnly: false },
+  { id: 'sales', label: 'Loja', icon: ShoppingBag, adminOnly: false },
+  { id: 'chat-list', label: 'Chat', icon: MessageSquare, adminOnly: false },
+  { id: 'help', label: 'Ajuda', icon: HelpCircle, adminOnly: false },
+  { id: 'settings', label: 'Ajustes', icon: Settings, adminOnly: false },
+  { id: 'store-modules', label: 'Módulos', icon: PackageOpen, clinicAdminOnly: true },
+  { id: 'subscription', label: 'Minha Assinatura', icon: CreditCard, clinicAdminOnly: true },
+  { id: 'superadmin', label: 'SaaS Admin', icon: Shield, adminOnly: true },
 ];
 
-const BottomNav = ({ currentPage, onNavigate }: { currentPage: Page, onNavigate: (page: Page) => void }) => {
+const BottomNav = ({ currentPage, onNavigate, currentUser, installedModules = [] }: { currentPage: Page, onNavigate: (page: Page) => void, currentUser: AppUser, installedModules?: ClinicaModulo[] }) => {
+  const visibleNav = NAV_ITEMS.filter(item => {
+    if ((item as any).adminOnly && currentUser.role !== 'SUPER_ADMIN') return false;
+    if ((item as any).clinicAdminOnly && currentUser.role !== 'ADMIN') return false;
+    if ((item as any).moduleId && !installedModules.some(m => m.moduloId === (item as any).moduleId && m.status === 'ativo')) return false;
+    return true;
+  });
+
   const isActive = (id: string) => {
     if (id === 'patients' && currentPage === 'service-record') return true;
     return currentPage === id;
   };
 
   return (
-    <nav className="lg:hidden sticky bottom-0 bg-white border-t border-slate-100 px-1 pb-6 pt-2 z-50 flex justify-around items-center w-full">
-      {NAV_ITEMS.map((item) => (
+    <nav className="lg:hidden sticky bottom-0 bg-white border-t border-slate-100 px-1 pb-6 pt-2 z-50 flex justify-around items-center w-full overflow-x-auto">
+      {visibleNav.map((item) => (
         <button
           key={item.id}
           onClick={() => onNavigate(item.id as Page)}
@@ -129,11 +166,12 @@ const BottomNav = ({ currentPage, onNavigate }: { currentPage: Page, onNavigate:
   );
 };
 
-const Sidebar = ({ currentPage, onNavigate, currentUser, onLogout }: {
+const Sidebar = ({ currentPage, onNavigate, currentUser, onLogout, installedModules = [] }: {
   currentPage: Page;
   onNavigate: (page: Page) => void;
   currentUser: AppUser;
   onLogout: () => void;
+  installedModules?: ClinicaModulo[];
 }) => {
   const isActive = (id: string) => {
     if (id === 'patients' && currentPage === 'service-record') return true;
@@ -143,19 +181,29 @@ const Sidebar = ({ currentPage, onNavigate, currentUser, onLogout }: {
   return (
     <aside className="hidden lg:flex flex-col w-64 bg-white border-r border-slate-100 h-full shrink-0 z-40">
       {/* Logo */}
-      <div className="flex items-center gap-3 px-5 py-5 border-b border-slate-100">
-        <div className="w-9 h-9 bg-primary/10 rounded-xl flex items-center justify-center text-primary shrink-0">
-          <Stethoscope size={20} />
-        </div>
-        <div>
-          <p className="font-bold text-slate-900 text-sm leading-tight">Podology Pro</p>
-          <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Sistema Clínico</p>
+      <div className="flex items-center px-6 py-8">
+        <img src="/logo.png" alt="ProClin" className="h-12 w-auto object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextElementSibling!.style.display = 'flex'; }} />
+        <div className="hidden items-center gap-3">
+          <div className="w-10 h-10 bg-primary/10 rounded-2xl flex items-center justify-center text-primary shrink-0 shadow-sm">
+            <Sparkles size={22} className="text-primary" />
+          </div>
+          <div>
+            <p className="font-bold text-slate-900 text-base leading-tight">ProClin</p>
+            <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-[0.1em]">Gestão Inteligente</p>
+          </div>
         </div>
       </div>
 
       {/* Nav Items */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        {NAV_ITEMS.map((item) => (
+        {NAV_ITEMS.filter(item => {
+          if ((item as any).adminOnly && currentUser.role !== 'SUPER_ADMIN') return false;
+          if ((item as any).clinicAdminOnly && currentUser.role !== 'ADMIN') return false;
+          if ((item as any).moduleId && !installedModules.some(m => m.moduloId === (item as any).moduleId && m.status === 'ativo')) return false;
+          // Hide regular nav items for SUPER_ADMIN so they only see SaaS items
+          if (currentUser.role === 'SUPER_ADMIN' && !['superadmin', 'help', 'settings'].includes(item.id)) return false;
+          return true;
+        }).map((item) => (
           <button
             key={item.id}
             onClick={() => onNavigate(item.id as Page)}
@@ -199,18 +247,18 @@ const Sidebar = ({ currentPage, onNavigate, currentUser, onLogout }: {
 };
 
 const Header = ({ title, onBack, rightAction }: { title: string, onBack?: () => void, rightAction?: React.ReactNode }) => (
-  <header className="flex items-center bg-white p-4 border-b border-slate-100 justify-between sticky top-0 z-40">
-    <div className="flex items-center gap-3 flex-1">
+  <header className="flex items-center justify-between px-6 py-5 bg-white/80 backdrop-blur-md sticky top-0 z-40 border-b border-slate-50">
+    <div className="flex items-center gap-4">
       {onBack && (
-        <button onClick={onBack} className="text-slate-600 hover:bg-slate-100 p-2 rounded-full transition-colors">
+        <button onClick={onBack} className="p-2 transition-all hover:bg-slate-100 rounded-2xl text-slate-600">
           <ArrowLeft size={24} />
         </button>
       )}
-      <h2 className="text-slate-900 text-lg font-bold leading-tight tracking-tight flex-1 text-center">
+      <h2 className="text-xl font-bold bg-gradient-to-r from-slate-900 to-slate-600 bg-clip-text text-transparent">
         {title}
       </h2>
     </div>
-    <div className="flex w-10 items-center justify-end">
+    <div className="flex items-center gap-3">
       {rightAction}
     </div>
   </header>
@@ -218,14 +266,46 @@ const Header = ({ title, onBack, rightAction }: { title: string, onBack?: () => 
 
 // --- Pages ---
 
-const LoginPage = ({ onLogin }: { onLogin: (user: AppUser) => void }) => {
+const LoginPage = ({ onLogin, onBack }: { onLogin: (user: AppUser) => void, onBack?: () => void }) => {
   // When Supabase is active, the credential is an e-mail.
   // When using mock fallback, it's a username.
   const [credential, setCredential] = useState('');
   const [password, setPassword] = useState('');
+  const [voucher, setVoucher] = useState('');
+  const [isVoucherMode, setIsVoucherMode] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const handleVoucherLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!voucher.trim()) {
+      setError('Insira um código de voucher válido.');
+      return;
+    }
+    
+    setLoading(true);
+    setError('');
+    
+    // Simulating validation for 24h access
+    setTimeout(() => {
+      const trialUser: AppUser = {
+        id: `trial_${Math.random().toString(36).substr(2, 9)}`,
+        name: 'Clínica Trial (WhatsApp)',
+        username: `trial_${voucher.trim().toUpperCase()}`,
+        role: 'ADMIN',
+        avatar: 'https://ui-avatars.com/api/?name=Trial+Clinic&background=7B61FF&color=fff',
+        active: true,
+        createdAt: new Date().toISOString(),
+        subscriptionPlan: 'Pro',
+        subscriptionStatus: 'trial',
+        trialEndsAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+      };
+      
+      onLogin(trialUser);
+      setLoading(false);
+    }, 1500);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -233,12 +313,24 @@ const LoginPage = ({ onLogin }: { onLogin: (user: AppUser) => void }) => {
     setLoading(true);
 
     try {
+      // 1. FIRST check the mock credentials since the user is explicitly testing a mock user "dono" on localhost.
+      const mockUser = INITIAL_USERS.find(
+        (u) => u.username === credential.trim() && u.password === password
+      );
+
+      if (mockUser) {
+         // Found local mock user. Skip supabase auth.
+         onLogin(mockUser);
+         setLoading(false);
+         return;
+      }
+
       if (supabase) {
-        // ── Supabase Auth ───────────────────────────────────────────────────
+        // ── Supabase Auth (Fallback for real DB users) ──────────────────────
         let emailToLogin = credential.trim();
         // Permite logar usando apenas o nome de usuário (ex: admin)
         if (!emailToLogin.includes('@')) {
-          emailToLogin = `${emailToLogin}@podologypro.com`;
+          emailToLogin = `${emailToLogin}@podologypro.com`; // Retaining original domain format for existing users
         }
 
         const { data, error: authError } = await supabase.auth.signInWithPassword({
@@ -283,15 +375,7 @@ const LoginPage = ({ onLogin }: { onLogin: (user: AppUser) => void }) => {
 
         onLogin(appUser);
       } else {
-        // ── Mock fallback (no Supabase configured) ──────────────────────────
-        const found = INITIAL_USERS.find(
-          (u) => u.username === credential.trim() && u.password === password
-        );
-        if (found) {
-          onLogin(found);
-        } else {
-          setError('Usuário ou senha incorretos.');
-        }
+         setError('Usuário ou senha incorretos.');
       }
     } catch {
       setError('Erro inesperado. Tente novamente.');
@@ -310,297 +394,376 @@ const LoginPage = ({ onLogin }: { onLogin: (user: AppUser) => void }) => {
         className="w-full max-w-[420px] space-y-8 bg-white p-8 rounded-xl shadow-sm border border-slate-200"
       >
         <div className="flex flex-col items-center text-center space-y-4">
-          <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center text-primary mb-2">
-            <Stethoscope size={48} />
-          </div>
-          <div className="space-y-1">
-            <h1 className="text-3xl font-bold tracking-tight text-slate-900">Podology Pro</h1>
-            <p className="text-sm font-medium text-slate-500 uppercase tracking-wider">Sistema de Podologia</p>
+          <img src="/logo.png" alt="ProClin" className="h-32 w-auto object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextElementSibling!.style.display = 'block'; }} />
+          <div className="hidden space-y-1 relative">
+            {onBack && (
+              <button onClick={onBack} className="absolute -left-16 top-1/2 -translate-y-1/2 p-2 text-slate-400 hover:text-slate-800 transition-colors" title="Voltar para Início">
+                <ArrowLeft size={20} />
+              </button>
+            )}
+            <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center text-primary mx-auto mb-2">
+              <Stethoscope size={48} />
+            </div>
+            <h1 className="text-3xl font-black tracking-tight text-slate-900">ProClin</h1>
+            <p className="text-sm font-medium text-slate-500 uppercase tracking-wider">Gestão Estética Avançada</p>
           </div>
         </div>
 
-        <form className="space-y-5" onSubmit={handleSubmit}>
-          <div className="space-y-2">
-            <label className="text-sm font-semibold text-slate-700 ml-1">
-              Usuário ou E-mail
-            </label>
-            <div className="relative group">
-              <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-primary transition-colors" size={20} />
-              <input 
-                className="w-full pl-12 pr-4 py-3.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-900 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all placeholder:text-slate-400" 
-                placeholder="Ex: admin ou admin@podologypro.com"
-                type="text"
-                value={credential}
-                onChange={(e) => setCredential(e.target.value)}
-                autoComplete="username"
-                required
-              />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <div className="flex items-center justify-between ml-1">
-              <label className="text-sm font-semibold text-slate-700">Senha</label>
-              <a className="text-xs font-semibold text-primary hover:underline transition-all" href="#">Esqueci minha senha</a>
-            </div>
-            <div className="relative group">
-              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-primary transition-colors" size={20} />
-              <input 
-                className="w-full pl-12 pr-12 py-3.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-900 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all placeholder:text-slate-400" 
-                placeholder="Sua senha secreta" 
-                type={showPassword ? 'text' : 'password'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete="current-password"
-                required
-              />
-              <button 
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors" 
-                type="button"
-                onClick={() => setShowPassword((v) => !v)}
-              >
-                <Eye size={20} />
-              </button>
-            </div>
-          </div>
-
-          {error && (
-            <motion.div
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-600 text-sm font-medium rounded-lg px-4 py-3"
-            >
-              <Lock size={16} />
-              {error}
-            </motion.div>
-          )}
-
-          <button
-            className="w-full py-4 bg-primary hover:bg-primary/90 text-white font-bold rounded-lg shadow-lg shadow-primary/20 transform transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed"
-            type="submit"
-            disabled={loading}
+        <div className="flex gap-2 p-1 bg-slate-100 rounded-2xl mb-8">
+          <button 
+            onClick={() => setIsVoucherMode(false)}
+            className={cn("flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all", !isVoucherMode ? "bg-white text-primary shadow-sm" : "text-slate-400 hover:text-slate-600")}
           >
-            {loading ? (
-              <>
-                <Activity size={20} className="animate-spin" />
-                Entrando...
-              </>
-            ) : (
-              <>
-                <span>Entrar no Sistema</span>
-                <LogOut size={20} className="rotate-180" />
-              </>
-            )}
+            Login Comum
           </button>
-        </form>
+          <button 
+            onClick={() => setIsVoucherMode(true)}
+            className={cn("flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all", isVoucherMode ? "bg-white text-[#7B61FF] shadow-sm" : "text-slate-400 hover:text-slate-600")}
+          >
+            Tenho Voucher
+          </button>
+        </div>
 
-        <div className="space-y-6 pt-2">
+        {!isVoucherMode ? (
+          <form className="space-y-5" onSubmit={handleSubmit}>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-slate-700 ml-1">
+                Usuário ou E-mail
+              </label>
+              <div className="relative group">
+                <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-primary transition-colors" size={20} />
+                <input 
+                  className="w-full pl-12 pr-4 py-3.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-900 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all placeholder:text-slate-400" 
+                  placeholder="Ex: admin ou admin@podologypro.com"
+                  type="text"
+                  value={credential}
+                  onChange={(e) => setCredential(e.target.value)}
+                  autoComplete="username"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between ml-1">
+                <label className="text-sm font-semibold text-slate-700">Senha</label>
+                <a className="text-xs font-semibold text-primary hover:underline transition-all" href="#">Esqueci minha senha</a>
+              </div>
+              <div className="relative group">
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-primary transition-colors" size={20} />
+                <input 
+                  className="w-full pl-12 pr-12 py-3.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-900 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all placeholder:text-slate-400" 
+                  placeholder="Sua senha secreta" 
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
+                  required
+                />
+                <button 
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors" 
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                >
+                  <Eye size={20} />
+                </button>
+              </div>
+            </div>
+
+            {error && (
+              <motion.div 
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                className="p-4 bg-red-50 text-red-500 text-xs font-bold rounded-2xl flex items-center gap-2 border border-red-100"
+              >
+                <AlertCircle size={16} />
+                {error}
+              </motion.div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-4 bg-gradient-to-r from-[#2563eb] to-[#3b82f6] text-white rounded-2xl font-bold shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 flex items-center justify-center"
+            >
+              {loading ? 'Entrando...' : 'Entrar no Sistema'}
+            </button>
+          </form>
+        ) : (
+          <form className="space-y-5" onSubmit={handleVoucherLogin}>
+            <div className="bg-slate-50 p-6 rounded-[24px] border border-slate-100 text-center space-y-4">
+              <div className="size-14 bg-[#7B61FF]/10 text-[#7B61FF] rounded-full flex items-center justify-center mx-auto">
+                <Ticket size={28} />
+              </div>
+              <h3 className="font-black text-slate-800 tracking-tight">Acesso 24h Liberado</h3>
+              <p className="text-xs text-slate-500 font-medium leading-relaxed">Insira o código que você recebeu para ganhar acesso imediato a todas as funções por um dia.</p>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-slate-700 ml-1">Código do Voucher</label>
+              <div className="relative group">
+                <Ticket className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-[#7B61FF] transition-colors" size={20} />
+                <input 
+                  className="w-full pl-12 pr-4 py-4 rounded-lg border border-slate-200 bg-slate-50 text-slate-900 focus:ring-2 focus:ring-[#7B61FF]/20 focus:border-[#7B61FF] outline-none transition-all placeholder:text-slate-400 font-mono text-lg tracking-widest uppercase" 
+                  placeholder="EX: TRIAL24-9X2..."
+                  type="text"
+                  value={voucher}
+                  onChange={(e) => setVoucher(e.target.value.toUpperCase())}
+                  required
+                />
+              </div>
+            </div>
+
+            {error && (
+              <motion.div 
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                className="p-4 bg-red-50 text-red-500 text-xs font-bold rounded-2xl flex items-center gap-2 border border-red-100"
+              >
+                <AlertCircle size={16} />
+                {error}
+              </motion.div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-4 bg-gradient-to-r from-[#7B61FF] to-[#9C8CFF] text-white rounded-2xl font-bold shadow-lg shadow-purple-500/20 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50 flex items-center justify-center"
+            >
+              {loading ? 'Validando...' : 'Liberar Meu Acesso'}
+            </button>
+          </form>
+        )}
+
+        <div className="space-y-6 pt-8">
           <div className="relative">
             <div className="absolute inset-0 flex items-center">
-              <span className="w-full border-t border-slate-200"></span>
+              <span className="w-full border-t border-slate-100"></span>
             </div>
-            <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-white px-4 text-slate-500 font-medium">Ou acesse com</span>
+            <div className="relative flex justify-center text-[10px] uppercase">
+              <span className="bg-white px-4 text-slate-400 font-bold tracking-widest">Acesso Rápido</span>
             </div>
           </div>
-          <button className="group flex flex-col items-center gap-2 p-4 rounded-xl border border-dashed border-slate-300 hover:border-primary hover:bg-primary/5 transition-all w-full" type="button">
-            <Fingerprint size={40} className="text-primary group-hover:scale-110 transition-transform" />
-            <span className="text-sm font-medium text-slate-600">Usar Biometria</span>
+          <button className="group flex items-center justify-center gap-3 p-4 rounded-2xl border border-dashed border-slate-200 hover:border-primary hover:bg-primary/5 transition-all w-full" type="button">
+            <Fingerprint size={24} className="text-primary group-hover:scale-110 transition-transform" />
+            <span className="text-sm font-bold text-slate-600">Usar Biometria</span>
           </button>
         </div>
       </motion.div>
       <footer className="mt-8 text-center space-y-1">
-        <p className="text-xs text-slate-400">© 2024 Podology Pro. Todos os direitos reservados.</p>
-        <p className="text-[10px] text-slate-400/60 uppercase tracking-widest">Tecnologia para Saúde dos Pés</p>
+        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em]">Esteta Pro © 2026</p>
+        <p className="text-[9px] text-slate-300 uppercase tracking-widest">Tecnologia para Estética de Resultados</p>
       </footer>
     </div>
   );
 };
 
-const DashboardPage = () => {
-  const data = [
-    { name: 'Seg', value: 40 },
-    { name: 'Ter', value: 60 },
-    { name: 'Qua', value: 45 },
-    { name: 'Qui', value: 85 },
-    { name: 'Sex', value: 100 },
-    { name: 'Sáb', value: 30 },
-    { name: 'Dom', value: 20 },
+// Aesthetic Dashboard Components and Metrics
+
+const DashboardPage = ({ 
+  agendamentos, 
+  pacientes, 
+  sessoes = [], // We'll need some mock sessions or use existing
+  onNavigate, 
+  onSelectPatient 
+}: { 
+  agendamentos: Agendamento[], 
+  pacientes: Paciente[], 
+  sessoes?: any[],
+  onNavigate: (p: Page) => void,
+  onSelectPatient: (id: string) => void
+}) => {
+  const today = new Date().toISOString().split('T')[0];
+  const todayAppointments = agendamentos.filter(a => a.dataAgendada === today);
+  
+  // Mock data for new aesthetic metrics since we might not have real data yet
+  const metrics = [
+    { label: 'Faturamento do Dia', value: 'R$ 4.500', icon: DollarSign, color: 'text-emerald-500', bg: 'bg-emerald-50' },
+    { label: 'Agendados Hoje', value: todayAppointments.length.toString(), icon: Calendar, color: 'text-primary', bg: 'bg-primary/10' },
+    { label: 'Pacientes Atendidos', value: '12', icon: Users, color: 'text-blue-500', bg: 'bg-blue-50' },
+    { label: 'Procedimentos Hoje', value: '18', icon: Activity, color: 'text-purple-500', bg: 'bg-purple-50' },
+    { label: 'Toxina Utilizada (U)', value: '150U', icon: Syringe, color: 'text-rose-500', bg: 'bg-rose-50' },
+    { label: 'Novos Pacientes (Mês)', value: '24', icon: UserPlus, color: 'text-orange-500', bg: 'bg-orange-50' },
+    { label: 'Retornos Agendados', value: '8', icon: RefreshCw, color: 'text-teal-500', bg: 'bg-teal-50' },
+    { label: 'Faltas/Cancelados', value: todayAppointments.filter(a => ['FALTOU', 'CANCELADO'].includes(a.status)).length.toString(), icon: X, color: 'text-red-500', bg: 'bg-red-50' },
+  ];
+
+  // Mock chart data
+  const revenueData = [
+    { name: '1', value: 1200 }, { name: '5', value: 3000 }, { name: '10', value: 2500 },
+    { name: '15', value: 4500 }, { name: '20', value: 3800 }, { name: '25', value: 5200 }, { name: '30', value: 4800 }
+  ];
+
+  const topProcedures = [
+    { name: 'Toxina Botulínica', count: 45, color: 'bg-rose-100 text-rose-600' },
+    { name: 'Preenchimento Labial', count: 32, color: 'bg-purple-100 text-purple-600' },
+    { name: 'Bioestimulador de Colágeno', count: 28, color: 'bg-blue-100 text-blue-600' },
+    { name: 'Fios de Sustentação', count: 15, color: 'bg-emerald-100 text-emerald-600' },
+    { name: 'Peeling Químico', count: 12, color: 'bg-orange-100 text-orange-600' },
   ];
 
   return (
-    <div className="flex-1 pb-4">
-      <Header 
-        title="Financeiro Clínica" 
-        rightAction={
-          <button className="flex size-10 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
-            <Bell size={20} />
-          </button>
-        }
-      />
-      
-      <div className="px-4 pt-6 pb-2">
-        <h3 className="text-slate-900 text-lg font-bold mb-4">Resumo do Dia</h3>
-        <div className="flex overflow-x-auto gap-4 no-scrollbar pb-2">
-          <div className="flex flex-col gap-3 p-4 rounded-xl bg-primary/10 border border-primary/20 min-w-[160px] flex-1">
-            <div className="flex items-center justify-between">
-              <ArrowUp size={20} className="text-primary" />
-              <span className="text-xs font-semibold text-primary uppercase">Entradas</span>
-            </div>
+    <div className="flex-1 pb-10 bg-slate-50 overflow-y-auto">
+      <div className="px-6 py-10 bg-white border-b border-slate-100">
+         <div className="max-w-5xl mx-auto flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div>
-              <p className="text-primary text-sm font-medium">Hoje</p>
-              <p className="text-slate-900 text-xl font-bold">R$ 1.250,00</p>
+               <h1 className="text-3xl font-black text-slate-900 tracking-tight">Comando <span className="text-primary">Geral</span></h1>
+               <p className="text-slate-500 font-medium mt-1">Bem-vindo, veja o resumo operacional da sua clínica.</p>
             </div>
-          </div>
-          <div className="flex flex-col gap-3 p-4 rounded-xl bg-red-50 border border-red-100 min-w-[160px] flex-1">
-            <div className="flex items-center justify-between">
-              <ArrowDown size={20} className="text-red-500" />
-              <span className="text-xs font-semibold text-red-500 uppercase">Saídas</span>
-            </div>
-            <div>
-              <p className="text-red-500 text-sm font-medium">Hoje</p>
-              <p className="text-slate-900 text-xl font-bold">R$ 450,00</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="px-4 py-4">
-        <h3 className="text-slate-900 text-lg font-bold mb-4">Desempenho Semanal</h3>
-        <div className="w-full h-48 bg-slate-50 rounded-xl p-4">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data}>
-              <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                {data.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={index === 4 ? '#25a1e4' : '#25a1e433'} />
-                ))}
-              </Bar>
-              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      <div className="px-4 py-4">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-slate-900 text-lg font-bold">Movimentações Recentes</h3>
-          <button className="text-primary text-sm font-semibold">Ver todas</button>
-        </div>
-        <div className="flex flex-col gap-3">
-          {[
-            { title: 'Consulta Padrão', category: 'Serviços', method: 'PIX', amount: '+ R$ 250,00', color: 'blue', icon: Stethoscope },
-            { title: 'Kit Higiene Oral', category: 'Produtos', method: 'Cartão', amount: '+ R$ 85,00', color: 'orange', icon: ShoppingBag },
-            { title: 'Energia Elétrica', category: 'Despesas', method: 'Dinheiro', amount: '- R$ 450,00', color: 'red', icon: Wallet },
-          ].map((item, i) => (
-            <div key={i} className="flex items-center justify-between p-4 bg-white border border-slate-100 rounded-xl">
-              <div className="flex items-center gap-3">
-                <div className={cn("size-10 rounded-full flex items-center justify-center", 
-                  item.color === 'blue' ? "bg-blue-50 text-blue-600" : 
-                  item.color === 'orange' ? "bg-orange-50 text-orange-600" : "bg-red-50 text-red-600"
-                )}>
-                  <item.icon size={20} />
-                </div>
-                <div>
-                  <p className="text-sm font-bold text-slate-900">{item.title}</p>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <span className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded uppercase",
-                      item.color === 'blue' ? "bg-blue-100 text-blue-700" : 
-                      item.color === 'orange' ? "bg-orange-100 text-orange-700" : "bg-red-100 text-red-700"
-                    )}>{item.category}</span>
-                    <span className="text-[10px] text-slate-400 font-medium">{item.method}</span>
-                  </div>
-                </div>
-              </div>
-              <p className={cn("font-bold", item.amount.startsWith('+') ? "text-emerald-500" : "text-red-500")}>{item.amount}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const InventoryPage = () => {
-  return (
-    <div className="flex-1 pb-4">
-      <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md px-4 pt-6 pb-2">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <div className="bg-primary/10 p-2 rounded-lg text-primary">
-              <Package size={24} />
-            </div>
-            <h1 className="text-xl font-bold tracking-tight">Estoque</h1>
-          </div>
-          <button className="flex items-center gap-1 bg-primary text-white px-4 py-2 rounded-lg text-sm font-semibold">
-            <Plus size={16} />
-            Novo Produto
-          </button>
-        </div>
-        <div className="relative group">
-          <Search className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 group-focus-within:text-primary transition-colors" size={20} />
-          <input className="block w-full pl-10 pr-4 py-3 bg-slate-100 border-none rounded-xl focus:ring-2 focus:ring-primary/50 text-sm placeholder:text-slate-500" placeholder="Buscar por nome ou código..." type="text"/>
-        </div>
-        <div className="flex gap-2 py-4 overflow-x-auto no-scrollbar">
-          {['Todos', 'Baixo Estoque', 'Medicamentos', 'Insumos'].map((filter, i) => (
-            <button key={i} className={cn(
-              "flex shrink-0 items-center justify-center gap-1 rounded-full px-4 py-1.5 text-xs font-medium",
-              i === 0 ? "bg-primary text-white" : "bg-slate-100 text-slate-600"
-            )}>
-              {filter}
+            <button 
+              onClick={() => onNavigate('agenda')}
+              className="px-6 py-3 bg-primary text-white font-bold rounded-2xl shadow-xl shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2"
+            >
+               <Calendar size={18} /> Ver Agenda Completa
             </button>
+         </div>
+      </div>
+      
+      <div className="max-w-7xl mx-auto px-6 -translate-y-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {metrics.map((m, i) => (
+            <motion.div 
+              key={i}
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: i * 0.05 }}
+              className="bg-white p-6 rounded-[32px] shadow-xl shadow-slate-200/50 border border-white flex flex-col gap-4"
+            >
+              <div className={cn("size-12 rounded-2xl flex items-center justify-center", m.bg)}>
+                 <m.icon size={24} className={m.color} />
+              </div>
+              <div>
+                <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest leading-none mb-2">{m.label}</p>
+                <p className="text-3xl font-black text-slate-900 leading-tight">{m.value}</p>
+              </div>
+            </motion.div>
           ))}
         </div>
-      </header>
+      </div>
 
-      <main className="px-4 space-y-4">
-        {[
-          { name: 'Amoxicilina 500mg', code: '#100234', stock: '124 unidades', price: 'R$ 42,90', status: 'Em dia', color: 'emerald', img: 'https://picsum.photos/seed/med1/100/100' },
-          { name: 'Soro Fisiológico 0,9%', code: '#100561', stock: '08 unidades', price: 'R$ 15,50', status: 'Baixo', color: 'orange', img: 'https://picsum.photos/seed/med2/100/100' },
-          { name: 'Luvas Nitrílicas (M)', code: '#100889', stock: '45 caixas', price: 'R$ 58,00', status: 'Em dia', color: 'emerald', img: 'https://picsum.photos/seed/med3/100/100' },
-        ].map((item, i) => (
-          <div key={i} className="bg-white border border-slate-100 rounded-xl p-4 shadow-sm relative overflow-hidden">
-            {item.status === 'Baixo' && <div className="absolute top-0 right-0 w-1 h-full bg-orange-400"></div>}
-            <div className="flex justify-between items-start mb-3">
-              <div className="flex gap-3">
-                <div className="w-12 h-12 rounded-lg bg-slate-100 flex items-center justify-center text-primary overflow-hidden">
-                  <img src={item.img} alt={item.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-slate-900 leading-tight">{item.name}</h3>
-                  <p className="text-xs text-slate-500">Cód: {item.code}</p>
-                </div>
-              </div>
-              <div className="text-right">
-                <span className={cn("text-xs font-medium px-2 py-0.5 rounded", 
-                  item.color === 'emerald' ? "text-emerald-600 bg-emerald-50" : "text-orange-500 bg-orange-100"
-                )}>{item.status}</span>
-                <p className="text-lg font-bold text-slate-900 mt-1">{item.price}</p>
-              </div>
+      <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 lg:grid-cols-3 gap-8 pb-10">
+         {/* Charts & Lists Column */}
+         <div className="lg:col-span-2 space-y-6">
+            <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm">
+               <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-xl font-black text-slate-900 tracking-tight">Faturamento (30 Dias)</h3>
+                  <div className="px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full text-xs font-bold flex items-center gap-1">
+                     <TrendingUp size={14} /> +15% vs mês anterior
+                  </div>
+               </div>
+               <div className="h-64 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={revenueData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#94a3b8' }} dy={10} />
+                      <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#94a3b8' }} tickFormatter={(val) => `R$${val/1000}k`} />
+                      <RechartsTooltip 
+                        contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                        formatter={(value: number) => [`R$ ${value}`, 'Faturamento']}
+                      />
+                      <Area type="monotone" dataKey="value" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorValue)" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+               </div>
             </div>
-            <div className="flex items-center justify-between py-2 border-y border-slate-50 mb-4">
-              <div className="flex flex-col">
-                <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Estoque Atual</span>
-                <span className={cn("text-sm font-semibold", item.status === 'Baixo' ? "text-orange-600" : "text-slate-700")}>{item.stock}</span>
-              </div>
+
+            <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm">
+               <h3 className="text-xl font-black text-slate-900 tracking-tight mb-6">Procedimentos Mais Realizados</h3>
+               <div className="space-y-4">
+                 {topProcedures.map((proc, i) => (
+                   <div key={i} className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 border border-slate-100 hover:border-slate-200 transition-all">
+                      <div className="flex items-center gap-4">
+                         <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm", proc.color)}>
+                           #{i + 1}
+                         </div>
+                         <span className="font-bold text-slate-800">{proc.name}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                         <span className="text-xl font-black text-slate-900">{proc.count}</span>
+                         <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Sessões</span>
+                      </div>
+                   </div>
+                 ))}
+               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <button className={cn("flex items-center justify-center gap-2 py-2.5 rounded-lg font-semibold text-sm transition-colors",
-                item.status === 'Baixo' ? "bg-emerald-500 text-white" : "bg-emerald-50 text-emerald-600"
-              )}>
-                <Plus size={18} />
-                {item.status === 'Baixo' ? 'Repor' : 'Entrada'}
-              </button>
-              <button className="flex items-center justify-center gap-2 py-2.5 rounded-lg bg-red-50 text-red-500 font-semibold text-sm">
-                <Minus size={18} />
-                Saída
-              </button>
+         </div>
+
+         {/* Today's Queue Column */}
+         <div className="lg:col-span-1 space-y-6">
+            <div className="flex items-center justify-between">
+               <h3 className="text-xl font-black text-slate-900 tracking-tight">Próximos do Dia</h3>
+               <span className="px-3 py-1 bg-white border border-slate-200 rounded-full text-[10px] font-black uppercase tracking-widest text-slate-400">
+                  {todayAppointments.length} Pacientes
+               </span>
             </div>
-          </div>
-        ))}
-      </main>
+
+            <div className="space-y-4">
+               {todayAppointments.length > 0 ? todayAppointments.sort((a,b) => a.horaInicio.localeCompare(b.horaInicio)).map((app, i) => {
+                 const pac = pacientes.find(p => p.id === app.pacienteId);
+                 if (!pac) return null;
+                 return (
+                   <motion.div 
+                     key={app.id} 
+                     initial={{ opacity: 0, x: -20 }}
+                     animate={{ opacity: 1, x: 0 }}
+                     transition={{ delay: i * 0.1 }}
+                     className="bg-white rounded-[32px] p-6 border border-slate-100 shadow-sm hover:shadow-xl hover:border-primary/20 transition-all group"
+                   >
+                     <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
+                        <div className="flex items-center gap-4">
+                           <div className="w-14 h-14 bg-slate-100 rounded-[22px] flex items-center justify-center overflow-hidden border-2 border-white shadow-md">
+                              <img src={`https://picsum.photos/seed/${pac.id}/100/100`} alt="" className="w-full h-full object-cover" />
+                           </div>
+                           <div>
+                              <div className="flex items-center gap-2 mb-1">
+                                 <h4 className="font-black text-slate-900 group-hover:text-primary transition-colors">{pac.nomeCompleto}</h4>
+                                 {app.status === 'EM_ATENDIMENTO' && (
+                                   <span className="size-2 bg-primary rounded-full animate-ping" />
+                                 )}
+                              </div>
+                              <div className="flex items-center gap-3">
+                                 <span className="flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-primary bg-primary/5 px-2 py-0.5 rounded-full">
+                                    <Clock size={12} /> {app.horaInicio}
+                                 </span>
+                                 <span className="text-xs font-bold text-slate-400">Procedimento Pendente</span>
+                              </div>
+                           </div>
+                        </div>
+
+                        <div className="flex gap-2 w-full sm:w-auto">
+                           <button 
+                             onClick={() => {
+                               onSelectPatient(pac.id);
+                               onNavigate('patients');
+                             }}
+                             className="flex-1 sm:flex-none px-6 py-3 bg-slate-900 text-white text-xs font-black uppercase tracking-widest rounded-2xl hover:bg-primary transition-all shadow-lg"
+                           >
+                              Atender Agora
+                           </button>
+                        </div>
+                     </div>
+                   </motion.div>
+                 );
+               }) : (
+                 <div className="bg-white rounded-[32px] p-12 text-center border-2 border-dashed border-slate-200">
+                    <Calendar size={48} className="text-slate-200 mx-auto mb-4" />
+                    <p className="text-slate-400 font-bold">Nenhum agendamento para hoje.</p>
+                 </div>
+               )}
+            </div>
+         </div>
+
+      </div>
     </div>
   );
 };
+
 
 const PatientsPage = ({ onSelectPatient }: { onSelectPatient: () => void }) => {
   return (
@@ -690,7 +853,7 @@ const ServiceRecordPage = () => {
   return (
     <div className="flex-1 pb-4">
       <Header 
-        title="Registro de Atendimento" 
+        title="Registro de Sessao" 
         rightAction={
           <button 
             onClick={handleSave}
@@ -1994,7 +2157,7 @@ const AgendaSettingsPage = ({ onBack }: { onBack: () => void }) => {
         </section>
 
         <section className="bg-white border border-slate-100 rounded-xl p-4 shadow-sm space-y-4">
-          <h3 className="text-sm font-bold text-slate-700">Horário de Atendimento</h3>
+          <h3 className="text-sm font-bold text-slate-700">Horário de Sessao</h3>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-slate-500">Abertura</label>
@@ -2024,7 +2187,7 @@ const AgendaSettingsPage = ({ onBack }: { onBack: () => void }) => {
             </div>
           </div>
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-500">Duração do Atendimento (min)</label>
+            <label className="text-xs font-semibold text-slate-500">Duração do Sessao (min)</label>
             <select value={interval} onChange={(e) => setInterval(e.target.value)}
               className="w-full px-4 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm outline-none focus:border-primary text-slate-900">
               {['30','45','60','90'].map(v => <option key={v} value={v}>{v} min</option>)}
@@ -2134,6 +2297,123 @@ const BackupDataPage = ({ onBack }: { onBack: () => void }) => {
   );
 };
 
+const StoreModulesPage = ({
+  availableModules,
+  installedModules,
+  onInstallModule,
+  onUninstallModule,
+  userPlan = 'Basic'
+}: {
+  availableModules: Modulo[];
+  installedModules: ClinicaModulo[];
+  onInstallModule: (slug: string) => void;
+  onUninstallModule: (slug: string) => void;
+  userPlan?: 'Basic' | 'Pro' | 'Enterprise';
+}) => {
+  const [confirmUninstall, setConfirmUninstall] = useState<string | null>(null);
+
+  return (
+    <div className="flex-1 pb-4 bg-slate-50 flex flex-col h-screen overflow-y-auto">
+      <div className="max-w-6xl mx-auto p-8 md:p-12">
+        <div className="mb-12 text-center md:text-left">
+          <h1 className="text-4xl font-black text-slate-900 tracking-tight">🛒 Loja de Módulos</h1>
+          <p className="text-slate-500 mt-2 font-medium text-lg">Ative recursos especializados para elevar o nível do seu atendimento.</p>
+        </div>
+
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+          {availableModules.map(m => {
+            const installed = installedModules.find(cm => cm.moduloId === m.id && cm.status === 'ativo');
+            const isInstalled = !!installed;
+            const planValue = { 'Basic': 1, 'Pro': 2, 'Enterprise': 3 };
+            const requiredPlan = m.planoMinimo || 'Basic';
+            const userPlanValue = planValue[userPlan as keyof typeof planValue];
+            const requiredPlanValue = planValue[requiredPlan as keyof typeof planValue];
+            const hasPlan = userPlanValue >= requiredPlanValue;
+
+            return (
+              <motion.div
+                key={m.id}
+                whileHover={{ y: -5 }}
+                className={cn(
+                  "group bg-white rounded-[40px] p-10 border shadow-sm flex flex-col items-center text-center transition-all duration-500",
+                  isInstalled ? "border-emerald-500 bg-emerald-50/20 shadow-xl shadow-emerald-500/10" : "border-slate-100 hover:shadow-2xl hover:shadow-primary/5",
+                  !hasPlan && !isInstalled && "opacity-80 grayscale-[0.5]"
+                )}
+              >
+                <div className={cn(
+                  "size-24 rounded-[32px] flex items-center justify-center mb-8 text-4xl shadow-2xl transition-all duration-500 group-hover:scale-110",
+                  isInstalled ? "bg-emerald-500 text-white animate-pulse-slow" : "bg-slate-50 text-slate-400 group-hover:bg-primary group-hover:text-white"
+                )}>
+                  {m.icone === 'sparkles' && <Sparkles size={40} />}
+                  {m.icone === 'footprints' && <Footprints size={40} />}
+                  {m.icone === 'stethoscope' && <Stethoscope size={40} />}
+                  {!['sparkles', 'footprints', 'stethoscope'].includes(m.icone) && <PackageOpen size={40} />}
+                </div>
+
+                <h3 className="text-2xl font-bold text-slate-900 mb-3">{m.nome}</h3>
+                <p className="text-slate-500 text-sm leading-relaxed mb-8 flex-1">{m.descricao}</p>
+
+                {!hasPlan && !isInstalled && (
+                   <div className="mb-8 px-5 py-2 bg-amber-100 text-amber-700 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 border border-amber-200">
+                      <Lock size={14} /> Exclusivo Plano {requiredPlan}
+                   </div>
+                )}
+
+                {isInstalled ? (
+                  <div className="w-full space-y-4">
+                    <div className="w-full flex items-center justify-center gap-2 py-5 bg-emerald-100 text-emerald-600 rounded-3xl text-sm font-black border border-emerald-200 shadow-inner">
+                      <CheckCircle2 size={22} /> Módulo Ativo
+                    </div>
+                    {confirmUninstall === m.slug ? (
+                      <div className="w-full flex gap-2 animate-in fade-in">
+                        <button
+                          onClick={() => setConfirmUninstall(null)}
+                          className="flex-1 py-4 text-slate-500 hover:bg-slate-100 rounded-2xl text-xs font-black transition-all uppercase tracking-widest"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          onClick={() => {
+                            onUninstallModule(m.slug);
+                            setConfirmUninstall(null);
+                          }}
+                          className="flex-1 py-4 bg-red-500 text-white hover:bg-red-600 rounded-2xl text-xs font-black transition-all uppercase tracking-widest shadow-lg shadow-red-500/20"
+                        >
+                          Confirmar
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setConfirmUninstall(m.slug)}
+                        className="w-full py-4 text-red-500 hover:bg-red-50 rounded-2xl text-xs font-black transition-all uppercase tracking-widest"
+                      >
+                        Remover Módulo
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => hasPlan && onInstallModule(m.slug)}
+                    disabled={!hasPlan}
+                    className={cn(
+                      "w-full py-5 rounded-3xl text-sm font-black shadow-2xl transition-all",
+                      hasPlan
+                        ? "bg-primary text-white shadow-primary/30 hover:scale-[1.05] hover:rotate-1 active:scale-95"
+                        : "bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200"
+                    )}
+                  >
+                   {hasPlan ? '✨ Instalar Agora' : `Upgrade para ${requiredPlan}`}
+                  </button>
+                )}
+              </motion.div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const SettingsPage = ({ onLogout, onNavigate, currentUser }: { onLogout: () => void; onNavigate: (page: Page) => void; currentUser: AppUser }) => {
   const roleBadgeColor = ROLE_COLORS;
 
@@ -2153,16 +2433,25 @@ const SettingsPage = ({ onLogout, onNavigate, currentUser }: { onLogout: () => v
       <Header title="Configurações" />
       
       <div className="p-6 flex flex-col items-center text-center">
-        <div className="relative">
+        <div className="relative cursor-pointer" onClick={() => document.getElementById('avatar-upload')?.click()}>
           <img 
             alt="Foto de perfil" 
-            className="w-24 h-24 rounded-full object-cover border-4 border-white shadow-sm" 
+            className="w-24 h-24 rounded-full object-cover border-4 border-white shadow-sm bg-slate-100" 
             src={currentUser.avatar}
             referrerPolicy="no-referrer"
+            onError={(e) => {
+              // Desenho bem simples de uma pessoa caso a imagem falhe / não exista
+              e.currentTarget.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23cbd5e1"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>';
+            }}
           />
-          <button className="absolute bottom-0 right-0 bg-primary text-white p-1.5 rounded-full shadow-lg border-2 border-white">
+          <input type="file" id="avatar-upload" className="hidden" accept="image/*" onChange={(e) => {
+             // Future hook: Upload para o Supabase Storage e atualização do AppUser.
+             // currentUser.avatar = novo_link;
+             alert('A foto será atualizada no sistema (Faltando integração com Storage)!');
+          }} />
+          <div className="absolute bottom-0 right-0 bg-primary text-white p-1.5 rounded-full shadow-lg border-2 border-white transition-transform hover:scale-110">
             <Edit3 size={14} />
-          </button>
+          </div>
         </div>
         <h2 className="mt-4 text-xl font-bold">{currentUser.name}</h2>
         <span className={cn('mt-1 text-xs font-bold px-3 py-1 rounded-full', (roleBadgeColor as Record<string,string>)[currentUser.role] ?? 'bg-slate-100 text-slate-600')}>{ROLE_LABELS[currentUser.role as keyof typeof ROLE_LABELS] ?? currentUser.role}</span>
@@ -2212,7 +2501,7 @@ const SettingsPage = ({ onLogout, onNavigate, currentUser }: { onLogout: () => v
           <LogOut size={20} />
           Sair da Conta
         </button>
-        <p className="text-center text-slate-400 text-[10px] pb-4">Podology Pro v2.4.0 • Desenvolvido com foco no seu cuidado</p>
+        <p className="text-center text-slate-400 text-[10px] pb-4">ProClin v3.0.0 • Gestão Clínica de Excelência</p>
       </div>
     </div>
   );
@@ -2222,16 +2511,148 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState<Page>('login');
   const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
   const [sessionLoading, setSessionLoading] = useState(!!supabase);
+  const [authView, setAuthView] = useState<'landing' | 'login' | 'onboarding'>('landing');
 
-  // ── Global state (in-memory DB) ──────────────────────────────────────────
-  const [agendamentos, setAgendamentos] = useState<Agendamento[]>(INITIAL_AGENDAMENTOS);
-  const [pacientes, setPacientes] = useState<Paciente[]>(INITIAL_PACIENTES);
-  const [anamneses, setAnamneses] = useState<Anamnese[]>(INITIAL_ANAMNESES);
-  const [atendimentos] = useState<Atendimento[]>(INITIAL_ATENDIMENTOS);
+  // ── Global state ──────────────────────────────────────────
+  const [agendamentos, setAgendamentos] = useState<Agendamento[]>([]);
+  const [pacientes, setPacientes] = useState<Paciente[]>([]);
+  const [anamneses, setAnamneseEsteticas] = useState<AnamneseEstetica[]>([]);
+  const [atendimentos, setAtendimentos] = useState<Sessao[]>([]);
+  
+  // ── Modular Architecture State ─────────────────────────────
+  const [availableModules] = useState<Modulo[]>([
+    { id: 'm1', nome: 'Estética Avançada', slug: 'estetica', descricao: 'Prontuários para Toxina Botulínica, Preenchimentos, Fios e Mapeamentos Faciais.', icone: 'sparkles', categoria: 'Estética', ativo: true, planoMinimo: 'Pro' },
+    { id: 'm2', nome: 'Podologia', slug: 'podologia', descricao: 'Prontuário podológico completo, mapeamento dos pés, ficha de órteses e controle micológico.', icone: 'footprints', categoria: 'Podologia', ativo: true, planoMinimo: 'Basic' },
+    { id: 'm3', nome: 'Clínica Médica', slug: 'odontologia', descricao: 'Prescrições, receituários especiais, CID-10 e evoluções clínicas gerais.', icone: 'stethoscope', categoria: 'Medicina', ativo: true, planoMinimo: 'Enterprise' },
+  ]);
+  
+  const [installedModules, setInstalledModules] = useState<ClinicaModulo[]>(() => {
+    const saved = localStorage.getItem('proclin_installed_modules');
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) { return []; }
+    }
+    // Default to 'estetica' active for initial experience
+    return [{
+       id: 'default_estetica',
+       clinicaId: 'c1',
+       moduloId: 'm1',
+       status: 'ativo',
+       instaladoEm: new Date().toISOString(),
+       moduloDetails: { id: 'm1', nome: 'Estética Avançada', slug: 'estetica', descricao: '', icone: 'sparkles', categoria: 'Estética', ativo: true, planoMinimo: 'Pro' }
+    }];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('proclin_installed_modules', JSON.stringify(installedModules));
+  }, [installedModules]);
+
+  const handleInstallModule = (slug: string) => {
+    const mod = availableModules.find(m => m.slug === slug);
+    if (!mod) return;
+    
+    // Check plan (redundant but safe)
+    const planValue = { 'Basic': 1, 'Pro': 2, 'Enterprise': 3 };
+    const requiredPlan = mod.planoMinimo || 'Basic';
+    const userPlan = currentUser?.subscriptionPlan || 'Basic';
+    if (planValue[userPlan] < planValue[requiredPlan]) {
+      alert(`Este módulo requer o plano ${requiredPlan}. Faça upgrade da sua assinatura.`);
+      return;
+    }
+
+    const newInstalled: ClinicaModulo = {
+      id: `inst_${Date.now()}`,
+      clinicaId: 'c1',
+      moduloId: mod.id,
+      status: 'ativo',
+      instaladoEm: new Date().toISOString(),
+      moduloDetails: mod
+    };
+    setInstalledModules([...installedModules, newInstalled]);
+  };
+
+  const handleUninstallModule = (slug: string) => {
+    const mod = availableModules.find(m => m.slug === slug);
+    if (!mod) return;
+    
+    // Custom UI confirm is used directly on StoreModulesPage,
+    // so we can safely perform the state update here.
+    setInstalledModules(prev => prev.filter(m => m.moduloId !== mod.id));
+  };
+  const [fotos, setFotos] = useState<FotoClinica[]>([]);
+  const [consentimentos, setConsentimentos] = useState<Consentimento[]>([]);
   const [selectedChat, setSelectedChat] = useState<ChatConversation | null>(null);
-  const servicos = INITIAL_SERVICOS;
+  const [servicos, setProcedimentos] = useState<Procedimento[]>(INITIAL_PROCEDIMENTOS);
+  const [pacotes, setPacotes] = useState<Pacote[]>(INITIAL_PACOTES);
+  const [pacotesPaciente, setPacotesPaciente] = useState<PacotePaciente[]>(INITIAL_PACOTES_PACIENTE);
+  const [aplicacoesToxina, setAplicacoesToxina] = useState<AplicacaoToxina[]>(INITIAL_TOXINA);
+  const [selectedPacienteId, setSelectedPacienteId] = useState<string | null>(null);
 
-  // ── Restore Supabase session on mount ────────────────────────────────────
+  // ── Actions ──
+  const handleAddFoto = (f: FotoClinica) => setFotos(prev => [...prev, f]);
+  const handleRemoveFoto = (id: string) => setFotos(prev => prev.filter(f => f.id !== id));
+  const handleUpdateSessao = (s: Sessao) => setAtendimentos(prev => prev.map(x => x.id === s.id ? s : x));
+  const handleAddSessao = (s: Sessao) => setAtendimentos(prev => [...prev, s]);
+  const handleAddConsentimento = (c: Consentimento) => setConsentimentos(prev => [...prev, c]);
+  const handleUseSessaoPacote = (ppId: string) => {
+    setPacotesPaciente(prev => prev.map(p => p.id === ppId ? { ...p, sessoesUtilizadas: Math.min(p.sessoesContratadas, p.sessoesUtilizadas + 1) } : p));
+  };
+  const handleSaveToxina = (novas: AplicacaoToxina[]) => setAplicacoesToxina(prev => [...prev, ...novas]);
+
+  // ── Fetch Global Data from Supabase ──
+  const fetchData = useCallback(async () => {
+    if (!supabase) return;
+    
+    // Fetch Procedimentos
+    const { data: sData } = await supabase.from('servicos').select('*').eq('ativo', true);
+    if (sData) {
+      setProcedimentos(sData.map(s => ({
+        id: s.id,
+        nome: s.nome,
+        descricao: s.descricao,
+        valorPadrao: Number(s.valor_padrao),
+        duracaoMinutos: s.duracao_minutos,
+        ativo: s.ativo,
+        corAgenda: s.cor_agenda
+      })));
+    }
+
+    // Fetch Pacientes (Clientes)
+    const { data: pData } = await supabase.from('clientes').select('*');
+    if (pData) {
+      setPacientes(pData.map(p => ({
+        id: p.id,
+        nomeCompleto: p.name,
+        cpf: p.cpf,
+        dataNascimento: p.birth_date,
+        telefone: p.phone,
+        email: p.email,
+        endereco: p.address,
+        ativo: true,
+        criadoEm: p.created_at,
+        atualizadoEm: p.created_at
+      })));
+    }
+
+    // Fetch Agendamentos
+    const { data: aData } = await supabase.from('agendamentos').select('*');
+    if (aData) {
+      setAgendamentos(aData.map(a => ({
+        id: a.id,
+        pacienteId: a.paciente_id,
+        servicoId: a.servico_id,
+        criadoPorUserId: a.criado_por_user_id,
+        dataAgendada: a.data_agendada,
+        horaInicio: a.hora_inicio,
+        horaFim: a.hora_fim,
+        status: a.status as AgendamentoStatus,
+        observacoes: a.observacoes,
+        criadoEm: a.created_at,
+        atualizadoEm: a.updated_at
+      })));
+    }
+  }, []);
+
+  // ── Restore Supabase session and fetch data on mount ────────────────────────
   useEffect(() => {
     if (!supabase) return;
 
@@ -2253,6 +2674,7 @@ export default function App() {
               avatar: profileData.avatar ?? `https://ui-avatars.com/api/?name=${encodeURIComponent(profileData.name ?? 'U')}&background=25a1e4&color=fff`,
               active: true,
               createdAt: session.user.created_at,
+              subscriptionPlan: profileData.subscription_plan || 'Basic', // Assuming subscription_plan exists in profileData
             }
           : {
               id: session.user.id,
@@ -2263,9 +2685,11 @@ export default function App() {
               avatar: `https://ui-avatars.com/api/?name=U&background=25a1e4&color=fff`,
               active: true,
               createdAt: session.user.created_at,
+              subscriptionPlan: 'Basic',
             };
 
         setCurrentUser(appUser);
+        fetchData();
         setCurrentPage('dashboard');
       }
       setSessionLoading(false);
@@ -2274,18 +2698,27 @@ export default function App() {
     const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_OUT' || !session) {
         setCurrentUser(null);
+        setPacientes([]);
+        setProcedimentos([]);
         setCurrentPage('login');
+      } else if (event === 'SIGNED_IN') {
+        fetchData();
       }
     });
 
     return () => listener.subscription.unsubscribe();
-  }, []);
+  }, [fetchData]);
 
   const handleNavigate = (page: Page) => setCurrentPage(page);
 
   const handleLogin = (user: AppUser) => {
     setCurrentUser(user);
-    setCurrentPage('dashboard');
+    if (user.role === 'SUPER_ADMIN') {
+      setCurrentPage('superadmin');
+    } else {
+      fetchData();
+      setCurrentPage('dashboard');
+    }
   };
 
   const handleLogout = async () => {
@@ -2311,8 +2744,84 @@ export default function App() {
   }
 
   if (!currentUser) {
-    return <LoginPage onLogin={handleLogin} />;
+    if (authView === 'landing') {
+      return <LandingPage onNavigate={setAuthView} />;
+    }
+    if (authView === 'onboarding') {
+      return <OnboardingPage onNavigateLogin={() => setAuthView('login')} onComplete={handleLogin} />;
+    }
+    return <LoginPage onLogin={handleLogin} onBack={() => setAuthView('landing')} />;
   }
+
+  const handleAddAgendamento = async (a: Agendamento) => {
+    // Optimistic update
+    setAgendamentos(prev => [...prev, a]);
+    
+    if (supabase) {
+      const { error } = await supabase.from('agendamentos').insert({
+        paciente_id: a.pacienteId,
+        servico_id: a.servicoId,
+        criado_por_user_id: a.criadoPorUserId,
+        data_agendada: a.dataAgendada,
+        hora_inicio: a.horaInicio,
+        hora_fim: a.horaFim,
+        status: a.status,
+        observacoes: a.observacoes
+      });
+
+      if (error) {
+        console.error('Erro ao salvar agendamento:', error);
+        alert('Erro ao salvar no banco de dados. Tente novamente.');
+        fetchData(); // Sync back if error
+      }
+    }
+  };
+
+
+  const handleUpdateAgendamentoStatus = async (id: string, status: AgendamentoStatus) => {
+    // Optimistic update
+    setAgendamentos(prev => prev.map(a => a.id === id ? { ...a, status, atualizadoEm: new Date().toISOString() } : a));
+
+    if (supabase) {
+      const { error } = await supabase
+        .from('agendamentos')
+        .update({ status, updated_at: new Date().toISOString() })
+        .eq('id', id);
+
+      if (error) {
+        console.error('Erro ao atualizar status:', error);
+        fetchData(); // Sync back if error
+      }
+    }
+  };
+
+  const handleAddPaciente = async (p: Paciente) => {
+    setPacientes(prev => [...prev, p]);
+    if (supabase) {
+      await supabase.from('clientes').insert({
+        name: p.nomeCompleto,
+        cpf: p.cpf,
+        phone: p.telefone,
+        email: p.email,
+        address: p.endereco,
+        birth_date: p.dataNascimento
+      });
+    }
+  };
+
+  const handleUpdatePaciente = async (p: Paciente) => {
+    setPacientes(prev => prev.map(x => x.id === p.id ? p : x));
+    if (supabase) {
+      await supabase.from('clientes').update({
+        name: p.nomeCompleto,
+        cpf: p.cpf,
+        phone: p.telefone,
+        email: p.email,
+        address: p.endereco,
+        birth_date: p.dataNascimento
+      }).eq('id', p.id);
+    }
+  };
 
   // Sub-pages that hide the bottom nav
   const settingsSubPages: Page[] = ['clinic-data', 'manage-services', 'manage-users', 'agenda-settings', 'backup-data'];
@@ -2327,6 +2836,7 @@ export default function App() {
         onNavigate={handleNavigate}
         currentUser={currentUser}
         onLogout={handleLogout}
+        installedModules={installedModules}
       />
 
       {/* Main content area */}
@@ -2342,17 +2852,22 @@ export default function App() {
               transition={{ duration: 0.2 }}
               className="flex-1 flex flex-col overflow-y-auto"
             >
-              {currentPage === 'dashboard' && <DashboardPage />}
+              {currentPage === 'dashboard' && (
+                <DashboardPage 
+                  agendamentos={agendamentos} 
+                  pacientes={pacientes} 
+                  onNavigate={handleNavigate}
+                  onSelectPatient={setSelectedPacienteId}
+                />
+              )}
               {currentPage === 'agenda' && (
                 <AgendaPage
                   currentUser={currentUser}
                   agendamentos={agendamentos}
                   pacientes={pacientes}
                   servicos={servicos}
-                  onAddAgendamento={(a) => setAgendamentos(prev => [...prev, a])}
-                  onUpdateStatus={(id, status) => setAgendamentos(prev =>
-                    prev.map(a => a.id === id ? { ...a, status, atualizadoEm: new Date().toISOString() } : a)
-                  )}
+                  onAddAgendamento={handleAddAgendamento}
+                  onUpdateStatus={handleUpdateAgendamentoStatus}
                 />
               )}
               {currentPage === 'patients' && (
@@ -2361,16 +2876,43 @@ export default function App() {
                   pacientes={pacientes}
                   anamneses={anamneses}
                   atendimentos={atendimentos}
+                  fotos={fotos}
                   agendamentos={agendamentos}
                   servicos={servicos}
-                  onAddPaciente={(p) => setPacientes(prev => [...prev, p])}
-                  onUpdatePaciente={(p) => setPacientes(prev => prev.map(x => x.id === p.id ? p : x))}
-                  onAddAnamnese={(a) => setAnamneses(prev => [...prev, a])}
-                  onUpdateAnamnese={(a) => setAnamneses(prev => prev.map(x => x.id === a.id ? a : x))}
+                  profissionais={INITIAL_USERS}
+                  onAddPaciente={handleAddPaciente}
+                  onUpdatePaciente={handleUpdatePaciente}
+                  onAddAnamneseEstetica={(a) => setAnamneseEsteticas(prev => [...prev, a])}
+                  onUpdateAnamneseEstetica={(a) => setAnamneseEsteticas(prev => prev.map(x => x.id === a.id ? a : x))}
+                  onUpdateSessao={handleUpdateSessao}
+                  onAddSessao={handleAddSessao}
+                  onAddConsentimento={handleAddConsentimento}
+                  onAddFoto={handleAddFoto}
+                  onRemoveFoto={handleRemoveFoto}
+                  pacotesContratados={[]}
+                  pacotesDisponiveis={[]}
+                  installedModules={installedModules}
+                  aplicacoesToxina={aplicacoesToxina}
+                  onUseSessaoPacote={handleUseSessaoPacote}
+                  onSaveToxina={handleSaveToxina}
+                  consentimentos={consentimentos}
+                  selectedPacienteId={selectedPacienteId}
+                  onSelectPacienteId={setSelectedPacienteId}
                 />
               )}
               {currentPage === 'service-record' && <ServiceRecordPage />}
-              {currentPage === 'inventory' && <InventoryPage />}
+              {currentPage === 'inventory' && currentUser && (
+                <InventoryPage 
+                  currentUser={currentUser} 
+                  onBack={() => setCurrentPage('dashboard')} 
+                />
+              )}
+              {currentPage === 'sales' && currentUser && (
+                <SalesPage 
+                  currentUser={currentUser} 
+                  onBack={() => setCurrentPage('dashboard')} 
+                />
+              )}
               {currentPage === 'chat-list' && currentUser && (
                 <ChatListPage 
                   currentUser={currentUser}
@@ -2388,6 +2930,7 @@ export default function App() {
                 />
               )}
               {currentPage === 'reports' && <ReportsPage />}
+              {currentPage === 'help' && <HelpPage />}
               {currentPage === 'settings' && (
                 <SettingsPage
                   onLogout={handleLogout}
@@ -2395,16 +2938,31 @@ export default function App() {
                   currentUser={currentUser}
                 />
               )}
+              {currentPage === 'superadmin' && currentUser?.role === 'SUPER_ADMIN' && (
+                <SuperAdminPage />
+              )}
+              {currentPage === 'subscription' && currentUser?.role === 'ADMIN' && (
+                <SubscriptionPage currentUser={currentUser} />
+              )}
               {currentPage === 'clinic-data' && <ClinicDataPage onBack={() => setCurrentPage('settings')} />}
               {currentPage === 'manage-services' && <ManageServicesPage onBack={() => setCurrentPage('settings')} />}
               {currentPage === 'manage-users' && <ManageUsersPage onBack={() => setCurrentPage('settings')} />}
               {currentPage === 'agenda-settings' && <AgendaSettingsPage onBack={() => setCurrentPage('settings')} />}
               {currentPage === 'backup-data' && <BackupDataPage onBack={() => setCurrentPage('settings')} />}
+              {currentPage === 'store-modules' && (
+                <StoreModulesPage 
+                  availableModules={availableModules}
+                  installedModules={installedModules}
+                  onInstallModule={handleInstallModule}
+                  onUninstallModule={handleUninstallModule}
+                  userPlan={currentUser?.subscriptionPlan}
+                />
+              )}
             </motion.div>
           </AnimatePresence>
 
           {!hideNav && (
-            <BottomNav currentPage={currentPage} onNavigate={handleNavigate} />
+            <BottomNav currentPage={currentPage} onNavigate={handleNavigate} currentUser={currentUser} installedModules={installedModules} />
           )}
         </div>
       </div>
